@@ -30,9 +30,11 @@ def create_app():
     # Register blueprints
     from routes import auth_bp
     from routes.bank import bank_bp
+    from routes.reference import reference_bp
     
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
     app.register_blueprint(bank_bp, url_prefix='/api')
+    app.register_blueprint(reference_bp, url_prefix='/api')
     
     # JWT error handlers
     @jwt.invalid_token_loader
