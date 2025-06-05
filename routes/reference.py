@@ -131,4 +131,62 @@ def create_reference():
         return jsonify({
             'status': 'error',
             'message': str(e)
+        }), 500
+
+@reference_bp.route('/my-earnings', methods=['GET'])
+@jwt_required()
+def get_my_earnings():
+    try:
+        # Get current user from JWT token
+        current_user_id = int(get_jwt_identity())
+        
+        # Get user details
+        user = User.query.get(current_user_id)
+        if not user or not user.is_active:
+            return jsonify({
+                'status': 'error',
+                'message': 'User not found or inactive'
+            }), 404
+            
+        # Find user's reference code
+        reference = Reference.query.filter_by(phone=user.phone).first()
+        if not reference:
+            return jsonify({
+                'status': 'error',
+                'message': 'No reference code found for your account'
+            }), 404
+            
+        # Find all users who used this reference code
+        referred_users = User.query.filter_by(promo_code=reference.code).all()
+        
+        # Calculate total earnings
+        total_earnings = float(reference.received_amount * len(referred_users)) if reference.received_amount else 0
+        
+        # Prepare referred users data
+        referred_users_data = []
+        for ref_user in referred_users:
+            referred_users_data.append({
+                'full_name': ref_user.full_name,
+                'phone': ref_user.phone,
+                'registered_at': ref_user.created_at.isoformat(),
+                'is_active': ref_user.is_active,
+                'is_reference_paid': ref_user.is_reference_paid
+            })
+            
+        return jsonify({
+            'status': 'success',
+            'data': {
+                'reference_code': reference.code,
+                'discount_amount': float(reference.discount_amount) if reference.discount_amount else 0,
+                'received_amount': float(reference.received_amount) if reference.received_amount else 0,
+                'total_referrals': len(referred_users),
+                'total_earnings': total_earnings,
+                'referred_users': referred_users_data
+            }
+        }), 200
+        
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
         }), 500 
