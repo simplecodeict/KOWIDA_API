@@ -11,6 +11,7 @@ class User(db.Model):
     url = db.Column(db.String(255), nullable=False)
     promo_code = db.Column(db.String(255), nullable=True)
     is_active = db.Column(db.Boolean, default=False)
+    is_reference_paid = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(colombo_tz))
     updated_at = db.Column(db.DateTime, default=lambda: datetime.now(colombo_tz), onupdate=lambda: datetime.now(colombo_tz))
     
@@ -27,6 +28,7 @@ class User(db.Model):
         self.password = bcrypt.generate_password_hash(password).decode('utf-8')
         self.url = url
         self.promo_code = promo_code
+        self.is_reference_paid = False
 
     def check_password(self, password):
         return bcrypt.check_password_hash(self.password, password) 
