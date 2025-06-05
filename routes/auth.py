@@ -1,9 +1,10 @@
 from flask import Blueprint, request, jsonify
-from extensions import db
+from extensions import db, bcrypt
 from models.user import User
-from schemas import UserRegistrationSchema
+from schemas import UserRegistrationSchema, LoginSchema
 from sqlalchemy.exc import IntegrityError
 from marshmallow import ValidationError
+from flask_jwt_extended import create_access_token
 
 auth_bp = Blueprint('auth', __name__)
 
@@ -75,6 +76,72 @@ def register():
         
     except Exception as e:
         db.session.rollback()
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+@auth_bp.route('/login', methods=['POST'])
+def login():
+    schema = LoginSchema()
+    try:
+        # Validate request data
+        data = schema.load(request.get_json())
+        
+        # Find user by phone
+        user = User.query.filter_by(phone=data['phone']).first()
+        
+        # Check if user exists and is active
+        if not user:
+            return jsonify({
+                'status': 'error',
+                'message': 'Invalid phone number or password'
+            }), 401
+            
+        if not user.is_active:
+            return jsonify({
+                'status': 'error',
+                'message': 'Account is inactive'
+            }), 401
+            
+        # Verify password
+        if not bcrypt.check_password_hash(user.password, data['password']):
+            return jsonify({
+                'status': 'error',
+                'message': 'Invalid phone number or password'
+            }), 401
+            
+        # Generate access token
+        access_token = create_access_token(
+            identity=user.id,
+            additional_claims={
+                'phone': user.phone,
+                'full_name': user.full_name
+            }
+        )
+        
+        return jsonify({
+            'status': 'success',
+            'message': 'Login successful',
+            'data': {
+                'access_token': access_token,
+                'user': {
+                    'id': user.id,
+                    'full_name': user.full_name,
+                    'phone': user.phone,
+                    'url': user.url
+                }
+            }
+        }), 200
+        
+    except ValidationError as e:
+        return jsonify({
+            'status': 'error',
+            'message': 'Validation error',
+            'errors': e.messages
+        }), 400
+        
+    except Exception as e:
         return jsonify({
             'status': 'error',
             'message': str(e)
