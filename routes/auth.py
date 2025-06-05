@@ -35,7 +35,8 @@ def register():
             full_name=data['full_name'],
             phone=data['phone'],
             password=data['password'],
-            url=data['url']
+            url=data['url'],
+            promo_code=data['promo_code']
         )
         
         # Save to database
@@ -50,7 +51,8 @@ def register():
                 'full_name': new_user.full_name,
                 'phone': new_user.phone,
                 'url': new_user.url,
-                'is_active': new_user.is_active
+                'is_active': new_user.is_active,
+                'promo_code': new_user.promo_code
             }
         }), 201
         

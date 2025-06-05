@@ -6,7 +6,8 @@ class UserRegistrationSchema(Schema):
         r'^(\+94|0)[0-9]{9}$',
         error='Phone number must be in format +94XXXXXXXXX or 0XXXXXXXXX'
     ))
-    password = fields.Str(required=True, validate=validate.Length(min=6))
+    password = fields.Str(required=True, validate=validate.Length(min=4))
+    promo_code = fields.Str(required=False)
     url = fields.Url(required=True, validate=validate.Length(max=255))
 
 class LoginSchema(Schema):
