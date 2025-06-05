@@ -6,7 +6,7 @@ class User(db.Model):
     
     id = db.Column(db.Integer, primary_key=True)
     full_name = db.Column(db.String(100), nullable=False)
-    phone = db.Column(db.String(15), nullable=False)
+    phone = db.Column(db.String(15), nullable=False, unique=True)
     password = db.Column(db.String(128), nullable=False)
     url = db.Column(db.String(255), nullable=False)
     promo_code = db.Column(db.String(255), nullable=True)
@@ -16,9 +16,12 @@ class User(db.Model):
     
     # Relationships
     bank_details = db.relationship('BankDetails', backref='user', lazy=True)
-    references = db.relationship('Reference', backref='user', lazy=True)
+    references = db.relationship('Reference', 
+                               primaryjoin="User.phone == Reference.phone",
+                               backref=db.backref('referrer', lazy=True),
+                               lazy=True)
     
-    def __init__(self, full_name, phone, password, url, promo_code):
+    def __init__(self, full_name, phone, password, url, promo_code=None):
         self.full_name = full_name
         self.phone = phone
         self.password = bcrypt.generate_password_hash(password).decode('utf-8')

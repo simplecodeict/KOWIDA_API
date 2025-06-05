@@ -6,7 +6,11 @@ class Reference(db.Model):
     
     id = db.Column(db.Integer, primary_key=True)
     code = db.Column(db.String(50), nullable=False, unique=True)
-    amount = db.Column(db.Numeric(10, 2), nullable=False)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    discount_amount = db.Column(db.Numeric(10, 2), nullable=True)
+    received_amount = db.Column(db.Numeric(10, 2), nullable=True)
+    phone = db.Column(db.String(9), db.ForeignKey('users.phone'), nullable=False)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(colombo_tz))
-    updated_at = db.Column(db.DateTime, default=lambda: datetime.now(colombo_tz), onupdate=lambda: datetime.now(colombo_tz)) 
+    updated_at = db.Column(db.DateTime, default=lambda: datetime.now(colombo_tz), onupdate=lambda: datetime.now(colombo_tz))
+    
+    # Remove the backref from here since it's defined in the User model
+    user = db.relationship('User', foreign_keys=[phone]) 
