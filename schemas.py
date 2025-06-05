@@ -14,4 +14,10 @@ class LoginSchema(Schema):
         r'^[0-9]{9}$',
         error='Phone number must be in format +94XXXXXXXXX or 0XXXXXXXXX'
     ))
-    password = fields.Str(required=True) 
+    password = fields.Str(required=True)
+
+class BankDetailsSchema(Schema):
+    name = fields.Str(required=True, validate=validate.Length(min=1, max=100))
+    bank_name = fields.Str(required=True, validate=validate.Length(min=1, max=100))
+    branch = fields.Str(required=True, validate=validate.Length(min=1, max=100))
+    account_number = fields.Str(required=True, validate=validate.Length(min=5, max=20)) 

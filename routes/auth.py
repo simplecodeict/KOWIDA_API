@@ -113,7 +113,7 @@ def login():
             
         # Generate access token
         access_token = create_access_token(
-            identity=user.id,
+            identity=str(user.id),  # Convert user.id to string
             additional_claims={
                 'phone': user.phone,
                 'full_name': user.full_name
