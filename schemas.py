@@ -6,7 +6,7 @@ class UserRegistrationSchema(Schema):
         r'^[0-9]{9,10}$',
         error='Phone number must be 9 or 10 digits'
     ))
-    password = fields.Str(required=True, validate=validate.Length(min=6))
+    password = fields.Str(required=True)
     promo_code = fields.Str(required=False)
     url = fields.Url(required=True, validate=validate.Length(max=255))
 
@@ -60,4 +60,22 @@ class ReferenceCodeSchema(Schema):
     reference_code = fields.Str(required=True)
     is_reference_paid = fields.Boolean(required=False, allow_none=True)
     page = fields.Int(required=False, missing=1, validate=validate.Range(min=1))
-    per_page = fields.Int(required=False, missing=10, validate=validate.Range(min=1, max=100)) 
+    per_page = fields.Int(required=False, missing=10, validate=validate.Range(min=1, max=100))
+
+class AdminUserDataSchema(Schema):
+    full_name = fields.Str(required=True, validate=validate.Length(min=1, max=100))
+    phone = fields.Str(required=True, validate=validate.Regexp(
+        r'^[0-9]{9,10}$',
+        error='Phone number must be 9 or 10 digits'
+    ))
+    password = fields.Str(required=True)
+
+class AdminReferenceDataSchema(Schema):
+    code = fields.Str(required=True)
+    discount_amount = fields.Decimal(places=2, required=True, validate=validate.Range(min=0))
+    received_amount = fields.Decimal(places=2, required=True, validate=validate.Range(min=0))
+
+class AdminRegistrationSchema(Schema):
+    user_data = fields.Nested(AdminUserDataSchema, required=True)
+    bank_details = fields.Nested(BankDetailsSchema, required=True)
+    reference_data = fields.Nested(AdminReferenceDataSchema, required=True) 

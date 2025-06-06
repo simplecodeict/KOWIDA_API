@@ -6,7 +6,7 @@ from extensions import db
 from marshmallow import ValidationError
 from datetime import datetime
 from sqlalchemy import and_, distinct, or_
-from schemas import UserPhoneSchema, UserFilterSchema, ReferenceCodeSchema
+from schemas import UserPhoneSchema, UserFilterSchema, ReferenceCodeSchema, UserRegistrationSchema, AdminRegistrationSchema
 
 admin_bp = Blueprint('admin', __name__)
 
@@ -127,20 +127,26 @@ def get_all_users():
         # Validate query parameters - empty dict if no parameters provided
         params = schema.load(request.args or {})
         
-        # Base query for active users with their relationships
-        query = User.query.filter_by(is_active=True)\
+        # Base query for users with their relationships
+        query = User.query.filter_by()\
             .outerjoin(BankDetails)\
             .outerjoin(Reference, User.phone == Reference.phone)
         
-        # Apply date range filter only if dates are provided
-        if params.get('start_date'):
-            query = query.filter(User.created_at >= datetime.combine(params['start_date'], datetime.min.time()))
-        if params.get('end_date'):
-            query = query.filter(User.created_at <= datetime.combine(params['end_date'], datetime.max.time()))
+        # Apply is_active filter if provided
+        if 'is_active' in params and params['is_active'] is not None:
+            query = query.filter(User.is_active == params['is_active'])
+            
+        # Apply promo_code filter if provided
+        if params.get('promo_code'):
+            query = query.filter(User.promo_code == params['promo_code'])
             
         # Apply reference code filter only if provided
         if params.get('reference_code'):
             query = query.filter(Reference.code == params['reference_code'])
+            
+        # Apply phone filter if provided
+        if params.get('phone'):
+            query = query.filter(User.phone.like(f'%{params["phone"]}%'))
             
         # Apply pagination
         page = params.get('page', 1)
@@ -157,6 +163,7 @@ def get_all_users():
                 'url': user.url,
                 'promo_code': user.promo_code,
                 'is_reference_paid': user.is_reference_paid,
+                'is_active': user.is_active,
                 'created_at': user.created_at.isoformat(),
                 'updated_at': user.updated_at.isoformat(),
                 'bank_details': [{
@@ -398,6 +405,12 @@ def get_users_by_reference(reference_code):
             )\
             .outerjoin(BankDetails)
             
+        # Apply date range filter if provided
+        if params.get('start_date'):
+            query = query.filter(User.created_at >= datetime.combine(params['start_date'], datetime.min.time()))
+        if params.get('end_date'):
+            query = query.filter(User.created_at <= datetime.combine(params['end_date'], datetime.max.time()))
+            
         # Apply is_reference_paid filter if provided
         if 'is_reference_paid' in params and params['is_reference_paid'] is not None:
             query = query.filter(User.is_reference_paid == params['is_reference_paid'])
@@ -525,6 +538,138 @@ def get_all_users_complete():
         }), 200
         
     except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+@admin_bp.route('/admin-register', methods=['POST'])
+def admin_register_user():
+    schema = AdminRegistrationSchema()
+    try:
+        # Validate request data
+        data = schema.load(request.get_json())
+        
+        # Extract data
+        user_data = data['user_data']
+        bank_details_data = data['bank_details']
+        reference_data = data['reference_data']
+        
+        # Start transaction
+        db.session.begin()
+        
+        try:
+            # Create user with default URL
+            user = User(
+                full_name=user_data['full_name'],
+                phone=user_data['phone'],
+                password=user_data['password'],
+                url="https://example.com/default",
+                promo_code=reference_data['code']
+            )
+            db.session.add(user)
+            
+            try:
+                db.session.flush()  # Try to flush user to check for any issues
+            except Exception as e:
+                db.session.rollback()
+                print(f"Error creating user: {str(e)}")  # Debug log
+                return jsonify({
+                    'status': 'error',
+                    'message': f'Error creating user: {str(e)}'
+                }), 500
+            
+            # Create bank details
+            bank_details = BankDetails(
+                user_id=user.id,
+                bank_name=bank_details_data['bank_name'],
+                name=bank_details_data['name'],
+                account_number=bank_details_data['account_number'],
+                branch=bank_details_data['branch']
+            )
+            db.session.add(bank_details)
+            
+            try:
+                db.session.flush()  # Try to flush bank details to check for any issues
+            except Exception as e:
+                db.session.rollback()
+                print(f"Error creating bank details: {str(e)}")  # Debug log
+                return jsonify({
+                    'status': 'error',
+                    'message': f'Error creating bank details: {str(e)}'
+                }), 500
+            
+            # Create reference with provided amounts
+            reference = Reference(
+                code=reference_data['code'],
+                phone=user.phone,
+                discount_amount=reference_data['discount_amount'],
+                received_amount=reference_data['received_amount']
+            )
+            db.session.add(reference)
+            
+            try:
+                # Final commit of all changes
+                db.session.commit()
+            except Exception as e:
+                db.session.rollback()
+                print(f"Error in final commit: {str(e)}")  # Debug log
+                return jsonify({
+                    'status': 'error',
+                    'message': f'Error saving data: {str(e)}'
+                }), 500
+            
+            # Verify the data was saved by querying it back
+            saved_user = User.query.get(user.id)
+            if not saved_user:
+                return jsonify({
+                    'status': 'error',
+                    'message': 'User was not saved properly'
+                }), 500
+            
+            return jsonify({
+                'status': 'success',
+                'message': 'User registered successfully',
+                'data': {
+                    'user': {
+                        'id': saved_user.id,
+                        'full_name': saved_user.full_name,
+                        'phone': saved_user.phone,
+                        'is_active': saved_user.is_active,
+                        'created_at': saved_user.created_at.isoformat()
+                    },
+                    'bank_details': {
+                        'bank_name': bank_details.bank_name,
+                        'owner_name': bank_details.name,
+                        'account_number': bank_details.account_number,
+                        'branch_name': bank_details.branch
+                    },
+                    'reference': {
+                        'code': reference.code,
+                        'discount_amount': float(reference.discount_amount),
+                        'received_amount': float(reference.received_amount)
+                    }
+                }
+            }), 201
+            
+        except Exception as e:
+            db.session.rollback()
+            print(f"Transaction error: {str(e)}")  # Debug log
+            return jsonify({
+                'status': 'error',
+                'message': f'Transaction error: {str(e)}'
+            }), 500
+            
+    except ValidationError as e:
+        print(f"Validation error: {str(e)}")  # Debug log
+        return jsonify({
+            'status': 'error',
+            'message': 'Validation error',
+            'errors': e.messages
+        }), 400
+        
+    except Exception as e:
+        print(f"Unexpected error: {str(e)}")  # Debug log
         return jsonify({
             'status': 'error',
             'message': str(e)

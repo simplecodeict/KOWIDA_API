@@ -40,9 +40,9 @@ class User(db.Model):
     @password.setter
     def password(self, plain_text_password):
         if plain_text_password:
-            # Password complexity validation
+            # Password validation for 4 digits
             if not self._is_password_strong(plain_text_password):
-                raise ValueError("Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, one number, and one special character")
+                raise ValueError("Password must be exactly 4 digits (0-9)")
             self._password = bcrypt.generate_password_hash(plain_text_password).decode('utf-8')
 
     def check_password(self, password):
@@ -82,21 +82,8 @@ class User(db.Model):
     @staticmethod
     def _is_password_strong(password):
         """
-        Validate password strength
-        - At least 8 characters long
-        - Contains at least one uppercase letter
-        - Contains at least one lowercase letter
-        - Contains at least one number
-        - Contains at least one special character
+        Validate password format
+        - Must be exactly 4 digits (0-9)
         """
-        if len(password) < 8:
-            return False
-        if not re.search(r'[A-Z]', password):
-            return False
-        if not re.search(r'[a-z]', password):
-            return False
-        if not re.search(r'[0-9]', password):
-            return False
-        if not re.search(r'[!@#$%^&*(),.?":{}|<>]', password):
-            return False
-        return True 
+        # Check if password is exactly 4 digits
+        return bool(re.match(r'^[0-9]{4}$', password)) 
