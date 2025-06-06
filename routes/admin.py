@@ -5,7 +5,7 @@ from models.bank_details import BankDetails
 from extensions import db
 from marshmallow import ValidationError
 from datetime import datetime
-from sqlalchemy import and_
+from sqlalchemy import and_, distinct
 from schemas import UserPhoneSchema, UserFilterSchema
 
 admin_bp = Blueprint('admin', __name__)
@@ -260,6 +260,96 @@ def get_inactive_users():
             'status': 'success',
             'data': {
                 'users': users_data,
+                'pagination': {
+                    'total_items': pagination.total,
+                    'total_pages': pagination.pages,
+                    'current_page': page,
+                    'per_page': per_page,
+                    'has_next': pagination.has_next,
+                    'has_prev': pagination.has_prev
+                }
+            }
+        }), 200
+        
+    except ValidationError as e:
+        return jsonify({
+            'status': 'error',
+            'message': 'Validation error',
+            'errors': e.messages
+        }), 400
+        
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+@admin_bp.route('/reference-owners', methods=['GET'])
+def get_reference_owners():
+    schema = UserFilterSchema()
+    try:
+        # Validate query parameters - empty dict if no parameters provided
+        params = schema.load(request.args or {})
+        
+        # Base query for users who have references (reference code owners)
+        # Using distinct to avoid duplicate users if they have multiple references
+        query = User.query\
+            .join(Reference, User.phone == Reference.phone)\
+            .outerjoin(BankDetails)\
+            .distinct()
+        
+        # Apply date range filter only if dates are provided
+        if params.get('start_date'):
+            query = query.filter(User.created_at >= datetime.combine(params['start_date'], datetime.min.time()))
+        if params.get('end_date'):
+            query = query.filter(User.created_at <= datetime.combine(params['end_date'], datetime.max.time()))
+            
+        # Apply reference code filter only if provided
+        if params.get('reference_code'):
+            query = query.filter(Reference.code == params['reference_code'])
+            
+        # Apply pagination
+        page = params.get('page', 1)
+        per_page = params.get('per_page', 10)
+        pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+        
+        # Prepare response data
+        owners_data = []
+        for user in pagination.items:
+            # Calculate total earnings from references
+            total_received = sum(float(ref.received_amount) if ref.received_amount else 0 for ref in user.references)
+            total_discount = sum(float(ref.discount_amount) if ref.discount_amount else 0 for ref in user.references)
+            
+            owner_data = {
+                'id': user.id,
+                'full_name': user.full_name,
+                'phone': user.phone,
+                'is_active': user.is_active,
+                'created_at': user.created_at.isoformat(),
+                'bank_details': [{
+                    'bank_name': bd.bank_name,
+                    'owner_name': bd.name,
+                    'account_number': bd.account_number,
+                    'branch_name': bd.branch
+                } for bd in user.bank_details],
+                'reference_details': {
+                    'total_references': len(user.references),
+                    'total_received_amount': total_received,
+                    'total_discount_given': total_discount,
+                    'references': [{
+                        'code': ref.code,
+                        'discount_amount': float(ref.discount_amount) if ref.discount_amount else 0,
+                        'received_amount': float(ref.received_amount) if ref.received_amount else 0,
+                        'created_at': ref.created_at.isoformat()
+                    } for ref in user.references]
+                }
+            }
+            owners_data.append(owner_data)
+            
+        return jsonify({
+            'status': 'success',
+            'data': {
+                'reference_owners': owners_data,
                 'pagination': {
                     'total_items': pagination.total,
                     'total_pages': pagination.pages,
