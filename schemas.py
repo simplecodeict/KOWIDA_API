@@ -53,4 +53,10 @@ class UserFilterSchema(Schema):
     end_date = fields.Date(required=False, allow_none=True)
     reference_code = fields.Str(required=False, allow_none=True)
     page = fields.Int(required=False, missing=1, validate=validate.Range(min=1))
+    per_page = fields.Int(required=False, missing=10, validate=validate.Range(min=1, max=100))
+
+class ReferenceCodeSchema(Schema):
+    reference_code = fields.Str(required=True)
+    is_reference_paid = fields.Boolean(required=False, allow_none=True)
+    page = fields.Int(required=False, missing=1, validate=validate.Range(min=1))
     per_page = fields.Int(required=False, missing=10, validate=validate.Range(min=1, max=100)) 

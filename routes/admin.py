@@ -6,7 +6,7 @@ from extensions import db
 from marshmallow import ValidationError
 from datetime import datetime
 from sqlalchemy import and_, distinct
-from schemas import UserPhoneSchema, UserFilterSchema
+from schemas import UserPhoneSchema, UserFilterSchema, ReferenceCodeSchema
 
 admin_bp = Blueprint('admin', __name__)
 
@@ -350,6 +350,110 @@ def get_reference_owners():
             'status': 'success',
             'data': {
                 'reference_owners': owners_data,
+                'pagination': {
+                    'total_items': pagination.total,
+                    'total_pages': pagination.pages,
+                    'current_page': page,
+                    'per_page': per_page,
+                    'has_next': pagination.has_next,
+                    'has_prev': pagination.has_prev
+                }
+            }
+        }), 200
+        
+    except ValidationError as e:
+        return jsonify({
+            'status': 'error',
+            'message': 'Validation error',
+            'errors': e.messages
+        }), 400
+        
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+@admin_bp.route('/reference-users/<reference_code>', methods=['GET'])
+def get_users_by_reference(reference_code):
+    schema = ReferenceCodeSchema()
+    try:
+        # Validate query parameters for pagination
+        params = schema.load({'reference_code': reference_code, **request.args})
+        
+        # First find the reference owner
+        reference_owner = User.query\
+            .join(Reference, User.phone == Reference.phone)\
+            .filter(Reference.code == params['reference_code'])\
+            .first()
+            
+        if not reference_owner:
+            return jsonify({
+                'status': 'error',
+                'message': 'Reference code not found'
+            }), 404
+            
+        # Query users who used this reference code (only active users)
+        query = User.query\
+            .filter(
+                User.promo_code == params['reference_code'],
+                User.is_active == True  # Only active users
+            )\
+            .outerjoin(BankDetails)
+            
+        # Apply is_reference_paid filter if provided
+        if 'is_reference_paid' in params and params['is_reference_paid'] is not None:
+            query = query.filter(User.is_reference_paid == params['is_reference_paid'])
+            
+        # Apply pagination
+        page = params.get('page', 1)
+        per_page = params.get('per_page', 10)
+        pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+        
+        # Prepare response data
+        users_data = []
+        for user in pagination.items:
+            user_data = {
+                'id': user.id,
+                'full_name': user.full_name,
+                'phone': user.phone,
+                'is_reference_paid': user.is_reference_paid,
+                'created_at': user.created_at.isoformat(),
+                'updated_at': user.updated_at.isoformat(),
+                'bank_details': [{
+                    'bank_name': bd.bank_name,
+                    'owner_name': bd.name,
+                    'account_number': bd.account_number,
+                    'branch_name': bd.branch
+                } for bd in user.bank_details]
+            }
+            users_data.append(user_data)
+            
+        # Get reference details
+        reference = Reference.query.filter_by(code=params['reference_code']).first()
+        reference_data = {
+            'code': reference.code,
+            'discount_amount': float(reference.discount_amount) if reference.discount_amount else 0,
+            'received_amount': float(reference.received_amount) if reference.received_amount else 0,
+            'created_at': reference.created_at.isoformat(),
+            'owner': {
+                'id': reference_owner.id,
+                'full_name': reference_owner.full_name,
+                'phone': reference_owner.phone,
+                'is_active': reference_owner.is_active
+            }
+        }
+            
+        return jsonify({
+            'status': 'success',
+            'data': {
+                'reference': reference_data,
+                'registered_users': users_data,
+                'summary': {
+                    'total_users': pagination.total,
+                    'reference_paid_users': sum(1 for user in users_data if user['is_reference_paid']),
+                    'reference_unpaid_users': sum(1 for user in users_data if not user['is_reference_paid'])
+                },
                 'pagination': {
                     'total_items': pagination.total,
                     'total_pages': pagination.pages,
