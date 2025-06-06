@@ -5,7 +5,7 @@ from models.bank_details import BankDetails
 from extensions import db
 from marshmallow import ValidationError
 from datetime import datetime
-from sqlalchemy import and_, distinct
+from sqlalchemy import and_, distinct, or_
 from schemas import UserPhoneSchema, UserFilterSchema, ReferenceCodeSchema
 
 admin_bp = Blueprint('admin', __name__)
@@ -224,6 +224,10 @@ def get_inactive_users():
         if params.get('reference_code'):
             query = query.filter(Reference.code == params['reference_code'])
             
+        # Apply phone filter if provided
+        if params.get('phone'):
+            query = query.filter(User.phone.like(f'%{params["phone"]}%'))
+            
         # Apply pagination
         page = params.get('page', 1)
         per_page = params.get('per_page', 10)
@@ -249,8 +253,8 @@ def get_inactive_users():
                 } for bd in user.bank_details],
                 'references': [{
                     'code': ref.code,
-                    'discount_amount': float(ref.discount_amount) if ref.discount_amount else None,
-                    'received_amount': float(ref.received_amount) if ref.received_amount else None,
+                    'discount_amount': float(ref.discount_amount) if ref.discount_amount else 0,
+                    'received_amount': float(ref.received_amount) if ref.received_amount else 0,
                     'created_at': ref.created_at.isoformat()
                 } for ref in user.references]
             }
@@ -291,22 +295,20 @@ def get_reference_owners():
         # Validate query parameters - empty dict if no parameters provided
         params = schema.load(request.args or {})
         
-        # Base query for users who have references (reference code owners)
-        # Using distinct to avoid duplicate users if they have multiple references
+        # Base query for active users who have references
         query = User.query\
+            .filter(User.is_active == True)\
             .join(Reference, User.phone == Reference.phone)\
             .outerjoin(BankDetails)\
             .distinct()
-        
-        # Apply date range filter only if dates are provided
-        if params.get('start_date'):
-            query = query.filter(User.created_at >= datetime.combine(params['start_date'], datetime.min.time()))
-        if params.get('end_date'):
-            query = query.filter(User.created_at <= datetime.combine(params['end_date'], datetime.max.time()))
             
         # Apply reference code filter only if provided
         if params.get('reference_code'):
             query = query.filter(Reference.code == params['reference_code'])
+            
+        # Apply phone filter if provided
+        if params.get('phone'):
+            query = query.filter(User.phone.like(f'%{params["phone"]}%'))
             
         # Apply pagination
         page = params.get('page', 1)
@@ -316,9 +318,9 @@ def get_reference_owners():
         # Prepare response data
         owners_data = []
         for user in pagination.items:
-            # Calculate total earnings from references
-            total_received = sum(float(ref.received_amount) if ref.received_amount else 0 for ref in user.references)
-            total_discount = sum(float(ref.discount_amount) if ref.discount_amount else 0 for ref in user.references)
+            # Get the user's reference and bank details
+            reference = user.references[0] if user.references else None
+            bank_detail = user.bank_details[0] if user.bank_details else None
             
             owner_data = {
                 'id': user.id,
@@ -326,23 +328,18 @@ def get_reference_owners():
                 'phone': user.phone,
                 'is_active': user.is_active,
                 'created_at': user.created_at.isoformat(),
-                'bank_details': [{
-                    'bank_name': bd.bank_name,
-                    'owner_name': bd.name,
-                    'account_number': bd.account_number,
-                    'branch_name': bd.branch
-                } for bd in user.bank_details],
+                'bank_details': {
+                    'bank_name': bank_detail.bank_name if bank_detail else None,
+                    'owner_name': bank_detail.name if bank_detail else None,
+                    'account_number': bank_detail.account_number if bank_detail else None,
+                    'branch_name': bank_detail.branch if bank_detail else None
+                } if bank_detail else None,
                 'reference_details': {
-                    'total_references': len(user.references),
-                    'total_received_amount': total_received,
-                    'total_discount_given': total_discount,
-                    'references': [{
-                        'code': ref.code,
-                        'discount_amount': float(ref.discount_amount) if ref.discount_amount else 0,
-                        'received_amount': float(ref.received_amount) if ref.received_amount else 0,
-                        'created_at': ref.created_at.isoformat()
-                    } for ref in user.references]
-                }
+                    'promo_code': reference.code if reference else None,
+                    'discount_amount': float(reference.discount_amount) if reference and reference.discount_amount else 0,
+                    'received_amount': float(reference.received_amount) if reference and reference.received_amount else 0,
+                    'created_at': reference.created_at.isoformat() if reference else None
+                } if reference else None
             }
             owners_data.append(owner_data)
             
@@ -471,6 +468,61 @@ def get_users_by_reference(reference_code):
             'message': 'Validation error',
             'errors': e.messages
         }), 400
+        
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+@admin_bp.route('/all-users', methods=['GET'])
+def get_all_users_complete():
+    try:
+        # Query all users without any conditions and explicitly include both active and inactive
+        users = User.query\
+            .filter(or_(User.is_active == True, User.is_active == False))\
+            .outerjoin(BankDetails)\
+            .outerjoin(Reference, User.phone == Reference.phone)\
+            .all()
+        
+        # Prepare response data
+        users_data = []
+        for user in users:
+            # Get the user's reference and bank details
+            reference = user.references[0] if user.references else None
+            bank_detail = user.bank_details[0] if user.bank_details else None
+            
+            user_data = {
+                'id': user.id,
+                'full_name': user.full_name,
+                'phone': user.phone,
+                'url': user.url,
+                'promo_code': user.promo_code,
+                'is_active': user.is_active,
+                'is_reference_paid': user.is_reference_paid,
+                'created_at': user.created_at.isoformat(),
+                'updated_at': user.updated_at.isoformat(),
+                'bank_details': {
+                    'bank_name': bank_detail.bank_name if bank_detail else None,
+                    'owner_name': bank_detail.name if bank_detail else None,
+                    'account_number': bank_detail.account_number if bank_detail else None,
+                    'branch_name': bank_detail.branch if bank_detail else None
+                } if bank_detail else None,
+                'reference_details': {
+                    'promo_code': reference.code if reference else None,
+                    'discount_amount': float(reference.discount_amount) if reference and reference.discount_amount else 0,
+                    'received_amount': float(reference.received_amount) if reference and reference.received_amount else 0,
+                    'created_at': reference.created_at.isoformat() if reference else None
+                } if reference else None
+            }
+            users_data.append(user_data)
+            
+        return jsonify({
+            'status': 'success',
+            'data': {
+                'users': users_data,
+            }
+        }), 200
         
     except Exception as e:
         return jsonify({
