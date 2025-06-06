@@ -40,4 +40,17 @@ class AdminBankDetailsSchema(Schema):
     name = fields.Str(required=True, validate=validate.Length(min=1, max=100))
     bank_name = fields.Str(required=True, validate=validate.Length(min=1, max=100))
     branch = fields.Str(required=True, validate=validate.Length(min=1, max=100))
-    account_number = fields.Str(required=True, validate=validate.Length(min=5, max=20)) 
+    account_number = fields.Str(required=True, validate=validate.Length(min=5, max=20))
+
+class UserPhoneSchema(Schema):
+    phone = fields.Str(required=True, validate=validate.Regexp(
+        r'^[0-9]{9,10}$',
+        error='Phone number must be 9 or 10 digits'
+    ))
+
+class UserFilterSchema(Schema):
+    start_date = fields.Date(required=False, allow_none=True)
+    end_date = fields.Date(required=False, allow_none=True)
+    reference_code = fields.Str(required=False, allow_none=True)
+    page = fields.Int(required=False, missing=1, validate=validate.Range(min=1))
+    per_page = fields.Int(required=False, missing=10, validate=validate.Range(min=1, max=100)) 
