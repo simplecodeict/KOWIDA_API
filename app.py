@@ -1,5 +1,5 @@
 from flask import Flask, jsonify, request
-from extensions import db, bcrypt, jwt, colombo_tz
+from extensions import db, bcrypt, jwt, colombo_tz, configure_jwt
 from datetime import timedelta
 from flask_jwt_extended import exceptions as jwt_exceptions
 from jwt.exceptions import InvalidTokenError, DecodeError
@@ -11,6 +11,7 @@ import logging
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 # Load environment variables
 load_dotenv()
@@ -54,11 +55,8 @@ def create_app():
     else:
         app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY')
 
-    # JWT Configuration
-    app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(hours=int(os.getenv('JWT_EXPIRY_HOURS', '1')))
-    app.config['JWT_TOKEN_LOCATION'] = ['headers']
-    app.config['JWT_HEADER_NAME'] = 'Authorization'
-    app.config['JWT_HEADER_TYPE'] = 'Bearer'
+    # Configure JWT
+    configure_jwt(app)
     
     # Rate limiting configuration
     app.config['RATELIMIT_DEFAULT'] = os.getenv('RATELIMIT_DEFAULT', '100 per minute')
@@ -76,7 +74,6 @@ def create_app():
     # Initialize extensions
     db.init_app(app)
     bcrypt.init_app(app)
-    jwt.init_app(app)
     
     # Import models
     from models import User, BankDetails, Reference
@@ -93,8 +90,18 @@ def create_app():
     app.register_blueprint(admin_bp, url_prefix='/api/admin')
     
     # JWT error handlers
+    @jwt.expired_token_loader
+    def expired_token_callback(jwt_header, jwt_data):
+        logger.debug(f"Token expired. Header: {jwt_header}, Data: {jwt_data}")
+        return jsonify({
+            'status': 'error',
+            'message': 'Token has expired',
+            'error_code': 'TOKEN_EXPIRED'
+        }), 401
+
     @jwt.invalid_token_loader
     def invalid_token_callback(error):
+        logger.debug(f"Invalid token error: {error}")
         return jsonify({
             'status': 'error',
             'message': 'Invalid token',
@@ -103,22 +110,16 @@ def create_app():
 
     @jwt.unauthorized_loader
     def missing_token_callback(error):
+        logger.debug(f"Missing token error: {error}")
         return jsonify({
             'status': 'error',
             'message': 'Authorization token is missing',
             'error_code': 'MISSING_TOKEN'
         }), 401
 
-    @jwt.expired_token_loader
-    def expired_token_callback(jwt_header, jwt_data):
-        return jsonify({
-            'status': 'error',
-            'message': 'Token has expired',
-            'error_code': 'TOKEN_EXPIRED'
-        }), 401
-
     @jwt.token_verification_failed_loader
     def verification_failed_callback(jwt_header, jwt_data):
+        logger.debug(f"Token verification failed. Header: {jwt_header}, Data: {jwt_data}")
         return jsonify({
             'status': 'error',
             'message': 'Token verification failed',
@@ -128,6 +129,7 @@ def create_app():
     # Generic error handlers
     @app.errorhandler(HTTPException)
     def handle_http_error(e):
+        logger.error(f"HTTP error: {e}")
         return jsonify({
             'status': 'error',
             'message': e.description,
@@ -138,6 +140,7 @@ def create_app():
     @app.errorhandler(Exception)
     def handle_generic_error(e):
         if isinstance(e, (InvalidTokenError, DecodeError)):
+            logger.error(f"JWT decode error: {e}")
             return jsonify({
                 'status': 'error',
                 'message': 'Invalid token format',
@@ -145,7 +148,7 @@ def create_app():
             }), 401
             
         # Log the error here (you should set up proper logging)
-        app.logger.error(f"Unhandled error: {str(e)}")
+        logger.error(f"Unhandled error: {str(e)}")
         
         return jsonify({
             'status': 'error',
@@ -165,6 +168,7 @@ def create_app():
                 'database': 'connected'
             }), 200
         except Exception as e:
+            logger.error(f"Health check failed: {e}")
             return jsonify({
                 'status': 'error',
                 'message': 'Service is unhealthy',

@@ -32,6 +32,7 @@ class User(db.Model):
         self.url = url
         self.promo_code = promo_code
         self.is_reference_paid = False
+        self.is_active = False
 
     @hybrid_property
     def password(self):

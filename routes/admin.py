@@ -564,9 +564,13 @@ def admin_register_user():
                 full_name=user_data['full_name'],
                 phone=user_data['phone'],
                 password=user_data['password'],
-                url="https://example.com/default",
-                promo_code=reference_data['code']
+                url="",
+                # promo_code=reference_data['code']
             )
+            # Set is_active after creation
+            user.is_active = True
+            user.is_reference_paid = True
+            
             db.session.add(user)
             
             try:
