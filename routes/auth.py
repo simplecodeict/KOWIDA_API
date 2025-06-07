@@ -15,6 +15,9 @@ from datetime import datetime, timedelta
 import logging
 import os
 import json
+import secrets
+import time
+import random
 
 logger = logging.getLogger(__name__)
 
@@ -28,24 +31,34 @@ def generate_token(user_id):
         # Convert user_id to string for consistency
         user_id_str = str(user_id)
         
-        # Create additional claims
+        # Get current timestamp
+        current_time = datetime.utcnow()
+        
+        # Create additional claims with enhanced security
         additional_claims = {
             "user_id": user_id_str,
             "token_type": "access",
             "type": "access",  # For backward compatibility
-            "iat": datetime.utcnow().timestamp()
+            "iat": current_time.timestamp(),  # Issued at
+            "nbf": current_time.timestamp(),  # Not valid before
+            "jti": secrets.token_urlsafe(32),  # Unique token ID
+            "scope": "access",  # Token scope
+            "fresh": False  # Token freshness
         }
         
-        # Generate token with string identity
+        # Generate token with enhanced settings
         access_token = create_access_token(
             identity=user_id_str,
-            additional_claims=additional_claims
+            additional_claims=additional_claims,
+            fresh=False
         )
         
         # Debug: Decode the token we just created to verify its contents
         try:
             decoded = decode_token(access_token)
-            logger.debug(f"Generated token decoded contents: {json.dumps(decoded)}")
+            # Log only non-sensitive parts of the token
+            logger.debug(f"Token generated with algorithm: {decoded.get('type')}")
+            logger.debug(f"Token expiration: {datetime.fromtimestamp(decoded.get('exp'))}")
         except Exception as decode_error:
             logger.error(f"Error decoding generated token: {str(decode_error)}")
         
@@ -132,19 +145,21 @@ def register():
 def login():
     schema = LoginSchema()
     try:
-        # Log request
-        logger.debug(f"Login request headers: {dict(request.headers)}")
-        logger.debug(f"Login request data: {request.get_json()}")
+        # Rate limiting check could be added here
+        
+        # Log request (excluding sensitive data)
+        logger.debug(f"Login attempt from IP: {request.remote_addr}")
         
         # Validate request data
         data = schema.load(request.get_json())
         
         # Find user by phone
         user = User.query.filter_by(phone=data['phone']).first()
-        logger.debug(f"Found user: {user.id if user else None}")
         
-        # Check if user exists and verify password
-        if not user or not user.check_password(data['password']):
+        # Use constant-time comparison for password check
+        if not user or not bcrypt.check_password_hash(user.password, data['password']):
+            # Add delay to prevent timing attacks
+            time.sleep(random.uniform(0.1, 0.3))
             return jsonify({
                 'status': 'error',
                 'message': 'Invalid phone number or password',
@@ -161,8 +176,8 @@ def login():
             
         # Generate access token
         access_token = generate_token(user.id)
-        logger.debug(f"Generated token length: {len(access_token)}")
         
+        # Create response
         response_data = {
             'status': 'success',
             'message': 'Login successful',
@@ -178,8 +193,24 @@ def login():
                 'access_token': access_token
             }
         }
-        logger.debug("Login successful, returning response")
-        return jsonify(response_data), 200
+        
+        # Create response object
+        response = jsonify(response_data)
+        
+        # Set secure headers
+        response.headers['X-Content-Type-Options'] = 'nosniff'
+        response.headers['X-Frame-Options'] = 'DENY'
+        response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+        
+        return response, 200
+        
+    except ValidationError as e:
+        return jsonify({
+            'status': 'error',
+            'message': 'Validation error',
+            'errors': e.messages,
+            'error_code': 'VALIDATION_ERROR'
+        }), 400
         
     except Exception as e:
         logger.error(f"Login error: {str(e)}", exc_info=True)
