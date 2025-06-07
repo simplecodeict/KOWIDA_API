@@ -245,6 +245,50 @@ def get_current_user():
                 'error_code': 'USER_NOT_FOUND'
             }), 404
             
+        # Get user's reference data
+        from models.reference import Reference
+        reference = Reference.query.filter_by(phone=user.phone).first()
+        
+        # Prepare referral data
+        referral_data = None
+        if reference:
+            # Get all users who used this reference code
+            referred_users = User.query.filter_by(promo_code=reference.code).all()
+            
+            # Calculate statistics
+            total_referrals = len(referred_users)
+            active_referrals = sum(1 for u in referred_users if u.is_active)
+            paid_referrals = sum(1 for u in referred_users if u.is_reference_paid)
+            
+            # Calculate earnings
+            total_earnings = float(reference.received_amount * total_referrals) if reference.received_amount else 0
+            
+            referral_data = {
+                'reference_code': reference.code,
+                'discount_amount': float(reference.discount_amount) if reference.discount_amount else 0,
+                'received_amount': float(reference.received_amount) if reference.received_amount else 0,
+                'total_referrals': total_referrals,
+                'active_referrals': active_referrals,
+                'paid_referrals': paid_referrals,
+                'total_earnings': total_earnings,
+                'created_at': reference.created_at.isoformat(),
+                'updated_at': reference.updated_at.isoformat()
+            }
+            
+        # Get user's used promo code data if they used one
+        used_promo_data = None
+        if user.promo_code:
+            referring_user = User.query.join(Reference).filter(
+                Reference.code == user.promo_code
+            ).first()
+            
+            if referring_user:
+                used_promo_data = {
+                    'code': user.promo_code,
+                    'referrer_name': referring_user.full_name,
+                    'is_paid': user.is_reference_paid
+                }
+            
         return jsonify({
             'status': 'success',
             'data': {
@@ -257,12 +301,13 @@ def get_current_user():
                     'is_reference_paid': user.is_reference_paid,
                     'created_at': user.created_at.isoformat(),
                     'updated_at': user.updated_at.isoformat()
-                }
+                },
+                'referral': referral_data,  # Will be None if user has no reference code
             }
         }), 200
         
     except Exception as e:
-        logging.error(f"Error fetching user data: {str(e)}")
+        logging.error(f"Error fetching user data: {str(e)}", exc_info=True)
         return jsonify({
             'status': 'error',
             'message': 'An error occurred while fetching user data',
