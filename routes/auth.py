@@ -1,5 +1,5 @@
 from flask import Blueprint, request, jsonify, current_app
-from extensions import db, bcrypt, jwt
+from extensions import db, bcrypt, jwt, upload_file_to_s3
 from models.user import User
 from schemas import UserRegistrationSchema, LoginSchema
 from sqlalchemy.exc import IntegrityError
@@ -71,8 +71,50 @@ def generate_token(user_id):
 def register():
     schema = UserRegistrationSchema()
     try:
+        # Check if file is present in request
+        if 'bank_slip' not in request.files:
+            return jsonify({
+                'status': 'error',
+                'message': 'Bank slip is required',
+                'error_code': 'BANK_SLIP_REQUIRED'
+            }), 400
+
+        bank_slip = request.files['bank_slip']
+        
+        # Validate file
+        if bank_slip.filename == '':
+            return jsonify({
+                'status': 'error',
+                'message': 'No file selected',
+                'error_code': 'NO_FILE_SELECTED'
+            }), 400
+
+        # Validate file type
+        allowed_extensions = {'pdf', 'png', 'jpg', 'jpeg'}
+        if '.' not in bank_slip.filename or \
+           bank_slip.filename.rsplit('.', 1)[1].lower() not in allowed_extensions:
+            return jsonify({
+                'status': 'error',
+                'message': 'Invalid file type. Allowed types: PDF, PNG, JPG, JPEG',
+                'error_code': 'INVALID_FILE_TYPE'
+            }), 400
+
+        # Read file data
+        file_data = bank_slip.read()
+        
+        # Upload to S3
+        try:
+            s3_url = upload_file_to_s3(file_data, bank_slip.filename)
+        except Exception as e:
+            logger.error(f"Error uploading bank slip: {str(e)}")
+            return jsonify({
+                'status': 'error',
+                'message': 'Error uploading bank slip',
+                'error_code': 'UPLOAD_ERROR'
+            }), 500
+
         # Validate request data
-        data = schema.load(request.get_json())
+        data = schema.load(request.form)
         logging.info(f"Received registration data: {data}")
         
         # Check if user already exists
@@ -84,13 +126,13 @@ def register():
                 'error_code': 'PHONE_ALREADY_EXISTS'
             }), 409
             
-        # Create new user
+        # Create new user with S3 URL
         try:
             new_user = User(
                 full_name=data['full_name'],
                 phone=data['phone'],
                 password=data['password'],
-                url=data['url'],
+                url=s3_url,  # Store S3 URL in the url field
                 promo_code=data.get('promo_code')
             )
             db.session.add(new_user)

@@ -1,14 +1,11 @@
 from marshmallow import Schema, fields, validate, ValidationError
 
 class UserRegistrationSchema(Schema):
-    full_name = fields.Str(required=True, validate=validate.Length(min=1, max=100))
-    phone = fields.Str(required=True, validate=validate.Regexp(
-        r'^[0-9]{9,10}$',
-        error='Phone number must be 9 or 10 digits'
-    ))
-    password = fields.Str(required=True)
-    promo_code = fields.Str(required=False)
-    url = fields.Url(required=True, validate=validate.Length(max=255))
+    full_name = fields.Str(required=True, validate=validate.Length(min=2))
+    phone = fields.Str(required=True, validate=validate.Length(min=9, max=10))
+    password = fields.Str(required=True, validate=validate.Length(equal=4))
+    promo_code = fields.Str(allow_none=True)
+    # url field is removed since it will be populated from S3
 
 class LoginSchema(Schema):
     phone = fields.Str(required=True, validate=validate.Regexp(
