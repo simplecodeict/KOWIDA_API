@@ -101,36 +101,67 @@ def upload_file_to_s3(file_data, file_name, bucket_name=None):
     :param file_name: Name of the file
     :param bucket_name: Name of the S3 bucket (optional, uses default from env)
     :return: URL of the uploaded file
+    :raises: ValueError, ClientError, Exception with specific error messages
     """
     try:
+        # Validate file data
+        if not file_data:
+            raise ValueError("No file data provided")
+
+        # Validate file name
+        if not file_name:
+            raise ValueError("No file name provided")
+
         # Use default bucket if not specified
         bucket = bucket_name or os.getenv('AWS_S3_BUCKET')
         if not bucket:
-            raise ValueError("S3 bucket name not provided")
+            raise ValueError("S3 bucket name not provided in environment variables")
+
+        # Validate AWS credentials
+        if not os.getenv('AWS_ACCESS_KEY_ID') or not os.getenv('AWS_SECRET_ACCESS_KEY'):
+            raise ValueError("AWS credentials not properly configured")
 
         # Generate unique file name
-        file_extension = file_name.split('.')[-1]
+        file_extension = file_name.split('.')[-1].lower()
         unique_filename = f"{uuid.uuid4()}.{file_extension}"
 
         # Get file type
         file_type = get_file_mime_type(file_name)
         
         # Upload file to S3 with public-read ACL
-        s3_client.put_object(
-            Bucket=bucket,
-            Key=unique_filename,
-            Body=file_data,
-            ContentType=file_type,
-            ACL='public-read'  # Make the object publicly readable
-        )
+        try:
+            s3_client.put_object(
+                Bucket=bucket,
+                Key=unique_filename,
+                Body=file_data,
+                ContentType=file_type,
+                ACL='public-read'  # Make the object publicly readable
+            )
+        except ClientError as e:
+            error_code = e.response['Error']['Code']
+            error_message = e.response['Error']['Message']
+            
+            if error_code == 'AccessDenied':
+                raise ValueError(f"S3 Access Denied: {error_message}. Please check bucket permissions and ACL settings.")
+            elif error_code == 'InvalidAccessKeyId':
+                raise ValueError("Invalid AWS Access Key ID. Please check your AWS credentials.")
+            elif error_code == 'SignatureDoesNotMatch':
+                raise ValueError("AWS Secret Access Key is invalid. Please check your AWS credentials.")
+            elif error_code == 'NoSuchBucket':
+                raise ValueError(f"S3 bucket '{bucket}' does not exist.")
+            else:
+                raise ValueError(f"AWS S3 Error: {error_message}")
 
         # Generate URL for the uploaded file
         url = f"https://{bucket}.s3.amazonaws.com/{unique_filename}"
         return url
 
+    except ValueError as e:
+        logger.error(f"Validation error in S3 upload: {str(e)}")
+        raise
     except ClientError as e:
-        logger.error(f"Error uploading file to S3: {str(e)}")
+        logger.error(f"AWS S3 client error: {str(e)}")
         raise
     except Exception as e:
-        logger.error(f"Unexpected error uploading file to S3: {str(e)}")
-        raise 
+        logger.error(f"Unexpected error in S3 upload: {str(e)}")
+        raise ValueError(f"Failed to upload file to S3: {str(e)}") 

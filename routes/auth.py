@@ -91,30 +91,53 @@ def register():
 
         # Validate file type
         allowed_extensions = {'pdf', 'png', 'jpg', 'jpeg'}
-        if '.' not in bank_slip.filename or \
-           bank_slip.filename.rsplit('.', 1)[1].lower() not in allowed_extensions:
+        file_extension = bank_slip.filename.rsplit('.', 1)[1].lower() if '.' in bank_slip.filename else ''
+        
+        if not file_extension or file_extension not in allowed_extensions:
             return jsonify({
                 'status': 'error',
-                'message': 'Invalid file type. Allowed types: PDF, PNG, JPG, JPEG',
+                'message': f'Invalid file type. Allowed types: {", ".join(allowed_extensions)}',
                 'error_code': 'INVALID_FILE_TYPE'
             }), 400
 
-        # Read file data
+        # Validate file size (max 5MB)
+        max_size = 5 * 1024 * 1024  # 5MB in bytes
         file_data = bank_slip.read()
-        
+        if len(file_data) > max_size:
+            return jsonify({
+                'status': 'error',
+                'message': 'File size exceeds maximum limit of 5MB',
+                'error_code': 'FILE_TOO_LARGE'
+            }), 400
+
         # Upload to S3
         try:
             s3_url = upload_file_to_s3(file_data, bank_slip.filename)
-        except Exception as e:
-            logger.error(f"Error uploading bank slip: {str(e)}")
+        except ValueError as e:
             return jsonify({
                 'status': 'error',
-                'message': 'Error uploading bank slip',
+                'message': str(e),
+                'error_code': 'S3_UPLOAD_ERROR'
+            }), 500
+        except Exception as e:
+            logger.error(f"Unexpected error uploading bank slip: {str(e)}")
+            return jsonify({
+                'status': 'error',
+                'message': 'Failed to upload bank slip. Please try again.',
                 'error_code': 'UPLOAD_ERROR'
             }), 500
 
         # Validate request data
-        data = schema.load(request.form)
+        try:
+            data = schema.load(request.form)
+        except ValidationError as e:
+            return jsonify({
+                'status': 'error',
+                'message': 'Validation error',
+                'errors': e.messages,
+                'error_code': 'VALIDATION_ERROR'
+            }), 400
+        
         logging.info(f"Received registration data: {data}")
         
         # Check if user already exists
@@ -158,28 +181,26 @@ def register():
             }), 201
             
         except ValueError as e:
-            logging.error(f"Validation error during user creation: {str(e)}")
+            db.session.rollback()
             return jsonify({
                 'status': 'error',
                 'message': str(e),
                 'error_code': 'VALIDATION_ERROR'
             }), 400
+        except IntegrityError as e:
+            db.session.rollback()
+            return jsonify({
+                'status': 'error',
+                'message': 'Database integrity error occurred',
+                'error_code': 'DATABASE_ERROR'
+            }), 500
             
-    except ValidationError as e:
-        logging.error(f"Schema validation error: {e.messages}")
-        return jsonify({
-            'status': 'error',
-            'message': 'Validation error',
-            'errors': e.messages,
-            'error_code': 'VALIDATION_ERROR'
-        }), 400
-        
     except Exception as e:
-        logging.error(f"Unexpected error during registration: {str(e)}")
+        logger.error(f"Unexpected error during registration: {str(e)}")
         db.session.rollback()
         return jsonify({
             'status': 'error',
-            'message': str(e),
+            'message': 'An unexpected error occurred during registration',
             'error_code': 'REGISTRATION_ERROR'
         }), 500
 
