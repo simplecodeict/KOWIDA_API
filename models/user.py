@@ -11,7 +11,7 @@ class User(db.Model):
     full_name = db.Column(db.String(100), nullable=False)
     phone = db.Column(db.String(15), nullable=False, unique=True, index=True)
     _password = db.Column('password', db.String(128), nullable=False)
-    url = db.Column(db.String(255), nullable=False)
+    url = db.Column(db.String(255), nullable=True)
     promo_code = db.Column(db.String(255), nullable=True, index=True)
     is_active = db.Column(db.Boolean, default=False)
     is_reference_paid = db.Column(db.Boolean, default=False)
