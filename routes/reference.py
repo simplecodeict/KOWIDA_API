@@ -34,13 +34,13 @@ class ReferenceUserFilterSchema(Schema):
 @reference_bp.route('/reference/<code>', methods=['GET'])
 def get_reference_by_code(code):
     try:
-        # Find reference by code
-        reference = Reference.query.filter_by(code=code).first()
+        # Find reference by code and ensure it's active
+        reference = Reference.query.filter_by(code=code, is_active=True).first()
         
         if not reference:
             return jsonify({
                 'status': 'error',
-                'message': 'Reference code not found'
+                'message': 'Reference code not found or inactive'
             }), 404
             
         # Get user details using phone number
@@ -60,6 +60,7 @@ def get_reference_by_code(code):
                     'code': reference.code,
                     'discount_amount': float(reference.discount_amount) if reference.discount_amount else None,
                     'received_amount': float(reference.received_amount) if reference.received_amount else None,
+                    'is_active': reference.is_active,
                     'created_at': reference.created_at.isoformat(),
                     'updated_at': reference.updated_at.isoformat()
                 },
