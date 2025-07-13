@@ -71,61 +71,57 @@ def generate_token(user_id):
 def register():
     schema = UserRegistrationSchema()
     try:
-        # Check if file is present in request
-        if 'bank_slip' not in request.files:
-            return jsonify({
-                'status': 'error',
-                'message': 'Bank slip is required',
-                'error_code': 'BANK_SLIP_REQUIRED'
-            }), 400
-
-        bank_slip = request.files['bank_slip']
+        s3_url = None
         
-        # Validate file
-        if bank_slip.filename == '':
-            return jsonify({
-                'status': 'error',
-                'message': 'No file selected',
-                'error_code': 'NO_FILE_SELECTED'
-            }), 400
+        # Check if bank slip is present in request (optional for card payments)
+        if 'bank_slip' in request.files:
+            bank_slip = request.files['bank_slip']
+            
+            # Validate file
+            if bank_slip.filename == '':
+                return jsonify({
+                    'status': 'error',
+                    'message': 'No file selected',
+                    'error_code': 'NO_FILE_SELECTED'
+                }), 400
 
-        # Validate file type
-        allowed_extensions = {'pdf', 'png', 'jpg', 'jpeg'}
-        file_extension = bank_slip.filename.rsplit('.', 1)[1].lower() if '.' in bank_slip.filename else ''
-        
-        if not file_extension or file_extension not in allowed_extensions:
-            return jsonify({
-                'status': 'error',
-                'message': f'Invalid file type. Allowed types: {", ".join(allowed_extensions)}',
-                'error_code': 'INVALID_FILE_TYPE'
-            }), 400
+            # Validate file type
+            allowed_extensions = {'pdf', 'png', 'jpg', 'jpeg'}
+            file_extension = bank_slip.filename.rsplit('.', 1)[1].lower() if '.' in bank_slip.filename else ''
+            
+            if not file_extension or file_extension not in allowed_extensions:
+                return jsonify({
+                    'status': 'error',
+                    'message': f'Invalid file type. Allowed types: {", ".join(allowed_extensions)}',
+                    'error_code': 'INVALID_FILE_TYPE'
+                }), 400
 
-        # Validate file size (max 5MB)
-        max_size = 5 * 1024 * 1024  # 5MB in bytes
-        file_data = bank_slip.read()
-        if len(file_data) > max_size:
-            return jsonify({
-                'status': 'error',
-                'message': 'File size exceeds maximum limit of 5MB',
-                'error_code': 'FILE_TOO_LARGE'
-            }), 400
+            # Validate file size (max 5MB)
+            max_size = 5 * 1024 * 1024  # 5MB in bytes
+            file_data = bank_slip.read()
+            if len(file_data) > max_size:
+                return jsonify({
+                    'status': 'error',
+                    'message': 'File size exceeds maximum limit of 5MB',
+                    'error_code': 'FILE_TOO_LARGE'
+                }), 400
 
-        # Upload to S3
-        try:
-            s3_url = upload_file_to_s3(file_data, bank_slip.filename)
-        except ValueError as e:
-            return jsonify({
-                'status': 'error',
-                'message': str(e),
-                'error_code': 'S3_UPLOAD_ERROR'
-            }), 500
-        except Exception as e:
-            logger.error(f"Unexpected error uploading bank slip: {str(e)}")
-            return jsonify({
-                'status': 'error',
-                'message': 'Failed to upload bank slip. Please try again.',
-                'error_code': 'UPLOAD_ERROR'
-            }), 500
+            # Upload to S3
+            try:
+                s3_url = upload_file_to_s3(file_data, bank_slip.filename)
+            except ValueError as e:
+                return jsonify({
+                    'status': 'error',
+                    'message': str(e),
+                    'error_code': 'S3_UPLOAD_ERROR'
+                }), 500
+            except Exception as e:
+                logger.error(f"Unexpected error uploading bank slip: {str(e)}")
+                return jsonify({
+                    'status': 'error',
+                    'message': 'Failed to upload bank slip. Please try again.',
+                    'error_code': 'UPLOAD_ERROR'
+                }), 500
 
         # Validate request data
         try:
@@ -151,13 +147,21 @@ def register():
             
         # Create new user with S3 URL
         try:
+            # Determine payment method based on whether bank slip was provided
+            payment_method = 'bank_deposit' if s3_url else 'card_payment'
+            is_active = True if payment_method == 'card_payment' else False
+            
             new_user = User(
                 full_name=data['full_name'],
                 phone=data['phone'],
                 password=data['password'],
                 url=s3_url,  # Store S3 URL in the url field
+                payment_method=payment_method,
                 promo_code=data.get('promo_code')
             )
+            
+            # Set is_active based on payment method
+            new_user.is_active = is_active
             db.session.add(new_user)
             db.session.commit()
             

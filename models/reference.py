@@ -9,6 +9,7 @@ class Reference(db.Model):
     discount_amount = db.Column(db.Numeric(10, 2), nullable=True)
     received_amount = db.Column(db.Numeric(10, 2), nullable=True)
     phone = db.Column(db.ForeignKey('users.phone'), nullable=False)
+    is_active = db.Column(db.Boolean, default=True, nullable=True)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(colombo_tz))
     updated_at = db.Column(db.DateTime, default=lambda: datetime.now(colombo_tz), onupdate=lambda: datetime.now(colombo_tz))
     

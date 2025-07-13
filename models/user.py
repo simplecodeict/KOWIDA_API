@@ -12,6 +12,7 @@ class User(db.Model):
     phone = db.Column(db.String(15), nullable=False, unique=True, index=True)
     _password = db.Column('password', db.String(128), nullable=False)
     url = db.Column(db.String(255), nullable=True)
+    payment_method = db.Column(db.String(50), nullable=False, default='card_payment')
     promo_code = db.Column(db.String(255), nullable=True, index=True)
     is_active = db.Column(db.Boolean, default=False)
     is_reference_paid = db.Column(db.Boolean, default=False)
@@ -25,11 +26,12 @@ class User(db.Model):
                                backref=db.backref('referrer', lazy=True),
                                lazy=True)
     
-    def __init__(self, full_name, phone, password, url, promo_code=None):
+    def __init__(self, full_name, phone, password, url, payment_method='card_payment', promo_code=None):
         self.full_name = full_name
         self.phone = phone
         self.password = password  # This will use the password.setter
         self.url = url
+        self.payment_method = payment_method
         self.promo_code = promo_code
         self.is_reference_paid = False
         self.is_active = False
@@ -72,13 +74,25 @@ class User(db.Model):
     @validates('url')
     def validate_url(self, key, url):
         if not url:
-            raise ValueError("URL is required")
+            return None  # Allow null/empty URLs
         
         # Basic URL validation
         if not re.match(r'^https?:\/\/.+', url):
             raise ValueError("Invalid URL format")
             
         return url
+
+    @validates('payment_method')
+    def validate_payment_method(self, key, payment_method):
+        if not payment_method:
+            return 'card_payment'  # Default to card_payment if not provided
+        
+        # Validate payment method (allow common payment methods)
+        allowed_methods = ['card_payment', 'bank_deposit', 'bank_transfer', 'cash', 'online_payment']
+        if payment_method.lower() not in allowed_methods:
+            raise ValueError(f"Invalid payment method. Allowed methods: {', '.join(allowed_methods)}")
+            
+        return payment_method.lower()
 
     @staticmethod
     def _is_password_strong(password):
