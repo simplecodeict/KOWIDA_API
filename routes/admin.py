@@ -515,13 +515,13 @@ def admin_register_user():
         db.session.begin()
         
         try:
-            # Create user with default URL
+            # Create user with default URL and role set as 'referer'
             user = User(
                 full_name=user_data['full_name'],
                 phone=user_data['phone'],
                 password=user_data['password'],
                 url="",
-                role=user_data.get('role'),
+                role='referer',  # Always set as referer for admin-register
                 # promo_code=reference_data['code']
             )
             # Set is_active after creation
@@ -596,6 +596,7 @@ def admin_register_user():
                         'id': saved_user.id,
                         'full_name': saved_user.full_name,
                         'phone': saved_user.phone,
+                        'role': saved_user.role,
                         'is_active': saved_user.is_active,
                         'created_at': saved_user.created_at.isoformat()
                     },
