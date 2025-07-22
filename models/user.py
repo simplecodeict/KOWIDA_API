@@ -18,6 +18,7 @@ class User(db.Model):
     role = db.Column(Enum('admin', 'user', 'referer', name='user_roles'), default='user', nullable=False)
     is_active = db.Column(db.Boolean, default=False)
     is_reference_paid = db.Column(db.Boolean, default=False)
+    paid_amount = db.Column(db.Numeric(10, 2), default=0, nullable=False)
     created_at = db.Column(db.DateTime)
     updated_at = db.Column(db.DateTime)
     
@@ -28,7 +29,7 @@ class User(db.Model):
                                backref=db.backref('referrer', lazy=True),
                                lazy=True)
     
-    def __init__(self, full_name, phone, password, url, payment_method='card_payment', promo_code=None, role=None):
+    def __init__(self, full_name, phone, password, url, payment_method='card_payment', promo_code=None, role=None, paid_amount=0):
         self.full_name = full_name
         self.phone = phone
         self.password = password  # This will use the password.setter
@@ -36,6 +37,7 @@ class User(db.Model):
         self.payment_method = payment_method
         self.promo_code = promo_code
         self.role = role  # Will be validated and defaulted to 'user' if None
+        self.paid_amount = paid_amount
         self.is_reference_paid = False
         self.is_active = False
         # Explicitly set the created_at time to ensure correct timezone
@@ -112,6 +114,27 @@ class User(db.Model):
             raise ValueError(f"Invalid role. Allowed roles: {', '.join(allowed_roles)}")
             
         return role.lower()
+
+    @validates('paid_amount')
+    def validate_paid_amount(self, key, paid_amount):
+        if paid_amount is None:
+            paid_amount = 0
+        
+        # Convert to float for validation
+        try:
+            paid_amount = float(paid_amount)
+        except (ValueError, TypeError):
+            raise ValueError("Paid amount must be a valid number")
+        
+        # Check if paid_amount is negative
+        if paid_amount < 0:
+            raise ValueError("Paid amount cannot be negative")
+        
+        # If role is 'user', paid_amount cannot be 0
+        if hasattr(self, 'role') and self.role == 'user' and paid_amount == 0:
+            raise ValueError("Paid amount cannot be 0 for users with role 'user'")
+        
+        return paid_amount
 
     @staticmethod
     def _is_password_strong(password):

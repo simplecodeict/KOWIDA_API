@@ -6,6 +6,7 @@ class UserRegistrationSchema(Schema):
     password = fields.Str(required=True, validate=validate.Length(equal=4))
     promo_code = fields.Str(allow_none=True)
     role = fields.Str(allow_none=True, validate=validate.OneOf(['admin', 'user', 'referer']))
+    paid_amount = fields.Decimal(places=2, required=False, allow_none=True, validate=validate.Range(min=0))
     # url field is removed since it will be populated from S3
 
 class LoginSchema(Schema):
@@ -71,6 +72,7 @@ class AdminUserDataSchema(Schema):
     ))
     password = fields.Str(required=True)
     role = fields.Str(allow_none=True, validate=validate.OneOf(['admin', 'user', 'referer']))
+    paid_amount = fields.Decimal(places=2, required=False, allow_none=True, validate=validate.Range(min=0))
 
 class AdminReferenceDataSchema(Schema):
     code = fields.Str(required=True)

@@ -151,6 +151,17 @@ def register():
             payment_method = 'bank_deposit' if s3_url else 'card_payment'
             is_active = True if payment_method == 'card_payment' else False
             
+            # Get paid_amount from form data, default to 0
+            paid_amount = float(data.get('paid_amount', 0)) if data.get('paid_amount') else 0
+            
+            # Validate paid_amount for user role
+            if data.get('role') == 'user' and paid_amount == 0:
+                return jsonify({
+                    'status': 'error',
+                    'message': 'Paid amount cannot be 0 for users with role "user"',
+                    'error_code': 'INVALID_PAID_AMOUNT'
+                }), 400
+            
             new_user = User(
                 full_name=data['full_name'],
                 phone=data['phone'],
@@ -158,7 +169,8 @@ def register():
                 url=s3_url,  # Store S3 URL in the url field
                 payment_method=payment_method,
                 promo_code=data.get('promo_code'),
-                role=data.get('role')
+                role=data.get('role'),
+                paid_amount=paid_amount
             )
             
             # Set is_active based on payment method
@@ -179,6 +191,7 @@ def register():
                         'phone': new_user.phone,
                         'url': new_user.url,
                         'is_active': new_user.is_active,
+                        'paid_amount': float(new_user.paid_amount),
                         'created_at': new_user.created_at.isoformat()
                     },
                     'access_token': access_token

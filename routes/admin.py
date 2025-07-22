@@ -184,6 +184,7 @@ def get_all_users():
                 'payment_method': user.payment_method,
                 'url': user.url,
                 'promo_code': user.promo_code,
+                'paid_amount': float(user.paid_amount),
                 'is_reference_paid': user.is_reference_paid,
                 'is_active': user.is_active,
                 'created_at': user.created_at.isoformat(),
@@ -269,6 +270,7 @@ def get_all_requests():
                 'promo_code': user.promo_code,
                 'payment_method': user.payment_method,
                 'is_reference_paid': user.is_reference_paid,
+                'paid_amount': float(user.paid_amount),
                 'created_at': user.created_at.isoformat(),
                 'updated_at': user.updated_at.isoformat(),
                 'bank_details': [{
@@ -451,6 +453,8 @@ def get_users_by_reference(reference_code):
                 'id': user.id,
                 'full_name': user.full_name,
                 'phone': user.phone,
+                'paid_amount': float(user.paid_amount),
+                'payment_method': user.payment_method,
                 'is_reference_paid': user.is_reference_paid,
                 'created_at': user.created_at.isoformat(),
                 'updated_at': user.updated_at.isoformat(),
@@ -576,12 +580,15 @@ def admin_register_user():
         
         try:
             # Create user with default URL and role set as 'referer'
+            paid_amount = float(user_data.get('paid_amount', 0)) if user_data.get('paid_amount') else 0
+            
             user = User(
                 full_name=user_data['full_name'],
                 phone=user_data['phone'],
                 password=user_data['password'],
                 url="",
                 role='referer',  # Always set as referer for admin-register
+                paid_amount=paid_amount,
                 # promo_code=reference_data['code']
             )
             # Set is_active after creation
@@ -658,6 +665,7 @@ def admin_register_user():
                         'phone': saved_user.phone,
                         'role': saved_user.role,
                         'is_active': saved_user.is_active,
+                        'paid_amount': float(saved_user.paid_amount),
                         'created_at': saved_user.created_at.isoformat()
                     },
                     'bank_details': {
