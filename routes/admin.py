@@ -7,11 +7,13 @@ from marshmallow import ValidationError
 from datetime import datetime
 from sqlalchemy import and_, distinct, or_
 from schemas import UserPhoneSchema, UserFilterSchema, ReferenceCodeSchema, UserRegistrationSchema, AdminRegistrationSchema
+from flask_jwt_extended import jwt_required
 from extensions import colombo_tz
 
 admin_bp = Blueprint('admin', __name__)
 
 @admin_bp.route('/activate-user', methods=['POST'])
+@jwt_required()
 def activate_user():
     schema = UserPhoneSchema()
     try:
@@ -66,6 +68,7 @@ def activate_user():
         }), 500
 
 @admin_bp.route('/mark-reference-paid', methods=['POST'])
+@jwt_required()
 def mark_reference_paid():
     schema = UserPhoneSchema()
     try:
@@ -122,6 +125,7 @@ def mark_reference_paid():
         }), 500
 
 @admin_bp.route('/users', methods=['GET'])
+@jwt_required()
 def get_all_users():
     schema = UserFilterSchema()
     try:
@@ -131,7 +135,7 @@ def get_all_users():
         # Base query for users with role = 'user' and their relationships
         query = User.query.filter(User.role == 'user')\
             .outerjoin(BankDetails)\
-            .outerjoin(Reference, User.phone == Reference.phone)
+            .outerjoin(Reference, User.promo_code == Reference.code)
         
         # Apply is_active filter if provided
         if 'is_active' in params and params['is_active'] is not None:
@@ -217,6 +221,7 @@ def get_all_users():
         }), 500
 
 @admin_bp.route('/requests', methods=['GET'])
+@jwt_required()
 def get_all_requests():
     schema = UserFilterSchema()
     try:
@@ -303,6 +308,7 @@ def get_all_requests():
         }), 500
 
 @admin_bp.route('/reference-owners', methods=['GET'])
+@jwt_required()
 def get_reference_owners():
     schema = UserFilterSchema()
     try:
@@ -389,6 +395,7 @@ def get_reference_owners():
         }), 500
 
 @admin_bp.route('/reference-owners/<reference_code>', methods=['GET'])
+@jwt_required()
 def get_users_by_reference(reference_code):
     schema = ReferenceCodeSchema()
     try:
@@ -500,6 +507,7 @@ def get_users_by_reference(reference_code):
 
 
 @admin_bp.route('/dashboard', methods=['GET'])
+@jwt_required()
 def get_dashboard_stats():
     try:
         # Count active users (role = 'user' and is_active = true)
