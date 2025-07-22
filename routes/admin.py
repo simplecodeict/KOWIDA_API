@@ -423,12 +423,9 @@ def get_users_by_reference(reference_code):
                 'message': 'Reference code not found'
             }), 404
             
-        # Query users who used this reference code (only active users)
+        # Query users who used this reference code (ALL users regardless of status)
         query = User.query\
-            .filter(
-                User.promo_code == params['reference_code'],
-                User.is_active == True  # Only active users
-            )\
+            .filter(User.promo_code == params['reference_code'])\
             .outerjoin(BankDetails)
             
         # Apply date range filter if provided
@@ -455,6 +452,7 @@ def get_users_by_reference(reference_code):
                 'phone': user.phone,
                 'paid_amount': float(user.paid_amount),
                 'payment_method': user.payment_method,
+                'is_active': user.is_active,
                 'is_reference_paid': user.is_reference_paid,
                 'created_at': user.created_at.isoformat(),
                 'updated_at': user.updated_at.isoformat(),
@@ -489,6 +487,8 @@ def get_users_by_reference(reference_code):
                 'registered_users': users_data,
                 'summary': {
                     'total_users': pagination.total,
+                    'active_users': sum(1 for user in users_data if user['is_active']),
+                    'inactive_users': sum(1 for user in users_data if not user['is_active']),
                     'reference_paid_users': sum(1 for user in users_data if user['is_reference_paid']),
                     'reference_unpaid_users': sum(1 for user in users_data if not user['is_reference_paid'])
                 },
@@ -546,13 +546,30 @@ def get_dashboard_stats():
             User.is_reference_paid == False
         ).count()
         
+        # Calculate total income (sum of paid_amount for active users with role = 'user')
+        from sqlalchemy import func
+        total_income_result = db.session.query(func.sum(User.paid_amount)).filter(
+            User.role == 'user',
+            User.is_active == True
+        ).scalar()
+        total_income = float(total_income_result) if total_income_result else 0.0
+        
+        # Calculate total pending amount (sum of paid_amount for inactive users with role = 'user')
+        total_pending_result = db.session.query(func.sum(User.paid_amount)).filter(
+            User.role == 'user',
+            User.is_active == False
+        ).scalar()
+        total_pending_amount = float(total_pending_result) if total_pending_result else 0.0
+        
         return jsonify({
             'status': 'success',
             'data': {
                 'active_users': active_users_count,
                 'requests': requests_count,
                 'reference_owners': reference_owners_count,
-                'reference_payment_pending': reference_payment_pending_count
+                'reference_payment_pending': reference_payment_pending_count,
+                'total_income': total_income,
+                'total_pending_amount': total_pending_amount
             }
         }), 200
         
