@@ -32,7 +32,7 @@ def upsert_bank_details():
         # Check if bank details already exist for the user
         bank_details = BankDetails.query.filter_by(user_id=current_user_id).first()
         
-        current_time = datetime.now(colombo_tz)
+        current_time = datetime.now(colombo_tz).replace(tzinfo=None)
         
         if bank_details:
             # Update existing bank details
@@ -159,7 +159,7 @@ def admin_create_bank_details():
             existing_bank.bank_name = data['bank_name']
             existing_bank.branch = data['branch']
             existing_bank.account_number = data['account_number']
-            existing_bank.updated_at = datetime.now(colombo_tz)
+            existing_bank.updated_at = datetime.now(colombo_tz).replace(tzinfo=None)
             message = 'Bank details updated successfully'
         else:
             # Create new bank details
@@ -169,8 +169,8 @@ def admin_create_bank_details():
                 bank_name=data['bank_name'],
                 branch=data['branch'],
                 account_number=data['account_number'],
-                created_at=datetime.now(colombo_tz),
-                updated_at=datetime.now(colombo_tz)
+                created_at=datetime.now(colombo_tz).replace(tzinfo=None),
+                updated_at=datetime.now(colombo_tz).replace(tzinfo=None)
             )
             db.session.add(bank_details)
             message = 'Bank details added successfully'

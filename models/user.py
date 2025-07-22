@@ -18,8 +18,8 @@ class User(db.Model):
     role = db.Column(Enum('admin', 'user', 'referer', name='user_roles'), default='user', nullable=False)
     is_active = db.Column(db.Boolean, default=False)
     is_reference_paid = db.Column(db.Boolean, default=False)
-    created_at = db.Column(db.DateTime, default=lambda: datetime.now(colombo_tz))
-    updated_at = db.Column(db.DateTime, default=lambda: datetime.now(colombo_tz), onupdate=lambda: datetime.now(colombo_tz))
+    created_at = db.Column(db.DateTime)
+    updated_at = db.Column(db.DateTime)
     
     # Relationships
     bank_details = db.relationship('BankDetails', backref='user', lazy=True, cascade='all, delete-orphan')
@@ -38,6 +38,10 @@ class User(db.Model):
         self.role = role  # Will be validated and defaulted to 'user' if None
         self.is_reference_paid = False
         self.is_active = False
+        # Explicitly set the created_at time to ensure correct timezone
+        # Store local time without timezone info to avoid UTC conversion
+        self.created_at = datetime.now(colombo_tz).replace(tzinfo=None)
+        self.updated_at = datetime.now(colombo_tz).replace(tzinfo=None)
 
     @hybrid_property
     def password(self):

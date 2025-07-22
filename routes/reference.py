@@ -115,8 +115,8 @@ def create_reference():
             phone=data['phone'],
             discount_amount=data['discount_amount'],
             received_amount=data['received_amount'],
-            created_at=datetime.now(colombo_tz),
-            updated_at=datetime.now(colombo_tz)
+            created_at=datetime.now(colombo_tz).replace(tzinfo=None),
+            updated_at=datetime.now(colombo_tz).replace(tzinfo=None)
         )
         
         db.session.add(reference)

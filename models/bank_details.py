@@ -10,5 +10,5 @@ class BankDetails(db.Model):
     branch = db.Column(db.String(100), nullable=False)
     account_number = db.Column(db.BigInteger, nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    created_at = db.Column(db.DateTime, default=lambda: datetime.now(colombo_tz))
-    updated_at = db.Column(db.DateTime, default=lambda: datetime.now(colombo_tz), onupdate=lambda: datetime.now(colombo_tz)) 
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(colombo_tz).astimezone(colombo_tz).replace(tzinfo=None))
+    updated_at = db.Column(db.DateTime, default=lambda: datetime.now(colombo_tz).astimezone(colombo_tz).replace(tzinfo=None), onupdate=lambda: datetime.now(colombo_tz).astimezone(colombo_tz).replace(tzinfo=None)) 

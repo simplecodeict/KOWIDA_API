@@ -7,6 +7,7 @@ from marshmallow import ValidationError
 from datetime import datetime
 from sqlalchemy import and_, distinct, or_
 from schemas import UserPhoneSchema, UserFilterSchema, ReferenceCodeSchema, UserRegistrationSchema, AdminRegistrationSchema
+from extensions import colombo_tz
 
 admin_bp = Blueprint('admin', __name__)
 
@@ -34,7 +35,7 @@ def activate_user():
             
         # Update user status
         user.is_active = True
-        user.updated_at = datetime.now()
+        user.updated_at = datetime.now(colombo_tz).replace(tzinfo=None)
         db.session.commit()
         
         return jsonify({
@@ -96,7 +97,7 @@ def mark_reference_paid():
             
         # Update reference payment status
         user.is_reference_paid = True
-        user.updated_at = datetime.now()
+        user.updated_at = datetime.now(colombo_tz).replace(tzinfo=None)
         db.session.commit()
         
         
