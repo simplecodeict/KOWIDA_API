@@ -267,6 +267,7 @@ def get_all_requests():
                 'phone': user.phone,
                 'url': user.url,
                 'promo_code': user.promo_code,
+                'payment_method': user.payment_method,
                 'is_reference_paid': user.is_reference_paid,
                 'created_at': user.created_at.isoformat(),
                 'updated_at': user.updated_at.isoformat(),
