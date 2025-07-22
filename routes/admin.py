@@ -128,8 +128,8 @@ def get_all_users():
         # Validate query parameters - empty dict if no parameters provided
         params = schema.load(request.args or {})
         
-        # Base query for users with their relationships
-        query = User.query.filter_by()\
+        # Base query for users with role = 'user' and their relationships
+        query = User.query.filter(User.role == 'user')\
             .outerjoin(BankDetails)\
             .outerjoin(Reference, User.phone == Reference.phone)
         
@@ -149,6 +149,10 @@ def get_all_users():
         if params.get('phone'):
             query = query.filter(User.phone.like(f'%{params["phone"]}%'))
             
+        # Apply payment_method filter if provided
+        if params.get('payment_method'):
+            query = query.filter(User.payment_method == params['payment_method'])
+            
         # Apply pagination
         page = params.get('page', 1)
         per_page = params.get('per_page', 10)
@@ -161,6 +165,8 @@ def get_all_users():
                 'id': user.id,
                 'full_name': user.full_name,
                 'phone': user.phone,
+                'role': user.role,
+                'payment_method': user.payment_method,
                 'url': user.url,
                 'promo_code': user.promo_code,
                 'is_reference_paid': user.is_reference_paid,
@@ -210,15 +216,15 @@ def get_all_users():
             'message': str(e)
         }), 500
 
-@admin_bp.route('/inactive-users', methods=['GET'])
-def get_inactive_users():
+@admin_bp.route('/requests', methods=['GET'])
+def get_all_requests():
     schema = UserFilterSchema()
     try:
         # Validate query parameters - empty dict if no parameters provided
         params = schema.load(request.args or {})
         
         # Base query for inactive users with their relationships
-        query = User.query.filter_by(is_active=False)\
+        query = User.query.filter_by(is_active=False, role='user')\
             .outerjoin(BankDetails)\
             .outerjoin(Reference, User.phone == Reference.phone)
         
@@ -303,10 +309,11 @@ def get_reference_owners():
         # Validate query parameters - empty dict if no parameters provided
         params = schema.load(request.args or {})
         
-        # Base query for active users who have references
+        # Base query for active users with role = 'referer'
         query = User.query\
             .filter(User.is_active == True)\
-            .join(Reference, User.phone == Reference.phone)\
+            .filter(User.role == 'referer')\
+            .outerjoin(Reference, User.phone == Reference.phone)\
             .outerjoin(BankDetails)\
             .distinct()
             
@@ -334,6 +341,7 @@ def get_reference_owners():
                 'id': user.id,
                 'full_name': user.full_name,
                 'phone': user.phone,
+                'role': user.role,
                 'is_active': user.is_active,
                 'created_at': user.created_at.isoformat(),
                 'bank_details': {
@@ -347,7 +355,8 @@ def get_reference_owners():
                     'discount_amount': float(reference.discount_amount) if reference and reference.discount_amount else 0,
                     'received_amount': float(reference.received_amount) if reference and reference.received_amount else 0,
                     'created_at': reference.created_at.isoformat() if reference else None
-                } if reference else None
+                } if reference else None,
+                'has_reference': reference is not None
             }
             owners_data.append(owner_data)
             
@@ -379,7 +388,7 @@ def get_reference_owners():
             'message': str(e)
         }), 500
 
-@admin_bp.route('/reference-users/<reference_code>', methods=['GET'])
+@admin_bp.route('/reference-owners/<reference_code>', methods=['GET'])
 def get_users_by_reference(reference_code):
     schema = ReferenceCodeSchema()
     try:
@@ -489,60 +498,6 @@ def get_users_by_reference(reference_code):
             'message': str(e)
         }), 500
 
-@admin_bp.route('/all-users', methods=['GET'])
-def get_all_users_complete():
-    try:
-        # Query all users without any conditions and explicitly include both active and inactive
-        users = User.query\
-            .filter(or_(User.is_active == True, User.is_active == False))\
-            .outerjoin(BankDetails)\
-            .outerjoin(Reference, User.phone == Reference.phone)\
-            .all()
-        
-        # Prepare response data
-        users_data = []
-        for user in users:
-            # Get the user's reference and bank details
-            reference = user.references[0] if user.references else None
-            bank_detail = user.bank_details[0] if user.bank_details else None
-            
-            user_data = {
-                'id': user.id,
-                'full_name': user.full_name,
-                'phone': user.phone,
-                'url': user.url,
-                'promo_code': user.promo_code,
-                'is_active': user.is_active,
-                'is_reference_paid': user.is_reference_paid,
-                'created_at': user.created_at.isoformat(),
-                'updated_at': user.updated_at.isoformat(),
-                'bank_details': {
-                    'bank_name': bank_detail.bank_name if bank_detail else None,
-                    'owner_name': bank_detail.name if bank_detail else None,
-                    'account_number': bank_detail.account_number if bank_detail else None,
-                    'branch_name': bank_detail.branch if bank_detail else None
-                } if bank_detail else None,
-                'reference_details': {
-                    'promo_code': reference.code if reference else None,
-                    'discount_amount': float(reference.discount_amount) if reference and reference.discount_amount else 0,
-                    'received_amount': float(reference.received_amount) if reference and reference.received_amount else 0,
-                    'created_at': reference.created_at.isoformat() if reference else None
-                } if reference else None
-            }
-            users_data.append(user_data)
-            
-        return jsonify({
-            'status': 'success',
-            'data': {
-                'users': users_data,
-            }
-        }), 200
-        
-    except Exception as e:
-        return jsonify({
-            'status': 'error',
-            'message': str(e)
-        }), 500
 
 @admin_bp.route('/admin-register', methods=['POST'])
 def admin_register_user():
