@@ -134,8 +134,7 @@ def get_all_users():
         
         # Base query for users with role = 'user' and their relationships
         query = User.query.filter(User.role == 'user')\
-            .outerjoin(BankDetails)\
-            .outerjoin(Reference, User.promo_code == Reference.code)
+            .outerjoin(BankDetails)
         
         # Apply is_active filter if provided
         if 'is_active' in params and params['is_active'] is not None:
@@ -147,7 +146,7 @@ def get_all_users():
             
         # Apply reference code filter only if provided
         if params.get('reference_code'):
-            query = query.filter(Reference.code == params['reference_code'])
+            query = query.filter(User.promo_code == params['reference_code'])
             
         # Apply phone filter if provided
         if params.get('phone'):
@@ -165,6 +164,18 @@ def get_all_users():
         # Prepare response data
         users_data = []
         for user in pagination.items:
+            # Get reference data based on promo_code
+            reference_data = []
+            if user.promo_code:
+                reference = Reference.query.filter_by(code=user.promo_code).first()
+                if reference:
+                    reference_data = [{
+                        'code': reference.code,
+                        'discount_amount': float(reference.discount_amount) if reference.discount_amount else None,
+                        'received_amount': float(reference.received_amount) if reference.received_amount else None,
+                        'created_at': reference.created_at.isoformat()
+                    }]
+            
             user_data = {
                 'id': user.id,
                 'full_name': user.full_name,
@@ -183,12 +194,7 @@ def get_all_users():
                     'account_number': bd.account_number,
                     'branch_name': bd.branch
                 } for bd in user.bank_details],
-                'references': [{
-                    'code': ref.code,
-                    'discount_amount': float(ref.discount_amount) if ref.discount_amount else None,
-                    'received_amount': float(ref.received_amount) if ref.received_amount else None,
-                    'created_at': ref.created_at.isoformat()
-                } for ref in user.references]
+                'references': reference_data
             }
             users_data.append(user_data)
             
