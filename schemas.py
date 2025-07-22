@@ -5,6 +5,7 @@ class UserRegistrationSchema(Schema):
     phone = fields.Str(required=True, validate=validate.Length(min=9, max=10))
     password = fields.Str(required=True, validate=validate.Length(equal=4))
     promo_code = fields.Str(allow_none=True)
+    role = fields.Str(allow_none=True, validate=validate.OneOf(['admin', 'user', 'referer']))
     # url field is removed since it will be populated from S3
 
 class LoginSchema(Schema):
@@ -67,6 +68,7 @@ class AdminUserDataSchema(Schema):
         error='Phone number must be 9 or 10 digits'
     ))
     password = fields.Str(required=True)
+    role = fields.Str(allow_none=True, validate=validate.OneOf(['admin', 'user', 'referer']))
 
 class AdminReferenceDataSchema(Schema):
     code = fields.Str(required=True)

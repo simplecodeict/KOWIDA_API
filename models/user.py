@@ -2,6 +2,7 @@ from datetime import datetime
 from extensions import db, bcrypt, colombo_tz
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import validates
+from sqlalchemy import Enum
 import re
 
 class User(db.Model):
@@ -14,6 +15,7 @@ class User(db.Model):
     url = db.Column(db.String(255), nullable=True)
     payment_method = db.Column(db.String(50), nullable=False, default='card_payment')
     promo_code = db.Column(db.String(255), nullable=True, index=True)
+    role = db.Column(Enum('admin', 'user', 'referer', name='user_roles'), default='user', nullable=False)
     is_active = db.Column(db.Boolean, default=False)
     is_reference_paid = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(colombo_tz))
@@ -26,13 +28,14 @@ class User(db.Model):
                                backref=db.backref('referrer', lazy=True),
                                lazy=True)
     
-    def __init__(self, full_name, phone, password, url, payment_method='card_payment', promo_code=None):
+    def __init__(self, full_name, phone, password, url, payment_method='card_payment', promo_code=None, role=None):
         self.full_name = full_name
         self.phone = phone
         self.password = password  # This will use the password.setter
         self.url = url
         self.payment_method = payment_method
         self.promo_code = promo_code
+        self.role = role  # Will be validated and defaulted to 'user' if None
         self.is_reference_paid = False
         self.is_active = False
 
@@ -93,6 +96,18 @@ class User(db.Model):
             raise ValueError(f"Invalid payment method. Allowed methods: {', '.join(allowed_methods)}")
             
         return payment_method.lower()
+
+    @validates('role')
+    def validate_role(self, key, role):
+        if not role:
+            return 'user'  # Default to user if not provided
+        
+        # Validate role (allow only specified roles)
+        allowed_roles = ['admin', 'user', 'referer']
+        if role.lower() not in allowed_roles:
+            raise ValueError(f"Invalid role. Allowed roles: {', '.join(allowed_roles)}")
+            
+        return role.lower()
 
     @staticmethod
     def _is_password_strong(password):

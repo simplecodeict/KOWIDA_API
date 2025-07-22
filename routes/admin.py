@@ -565,6 +565,7 @@ def admin_register_user():
                 phone=user_data['phone'],
                 password=user_data['password'],
                 url="",
+                role=user_data.get('role'),
                 # promo_code=reference_data['code']
             )
             # Set is_active after creation

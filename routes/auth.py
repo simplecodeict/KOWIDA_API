@@ -157,7 +157,8 @@ def register():
                 password=data['password'],
                 url=s3_url,  # Store S3 URL in the url field
                 payment_method=payment_method,
-                promo_code=data.get('promo_code')
+                promo_code=data.get('promo_code'),
+                role=data.get('role')
             )
             
             # Set is_active based on payment method
