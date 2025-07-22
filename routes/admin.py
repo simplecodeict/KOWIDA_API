@@ -499,6 +499,51 @@ def get_users_by_reference(reference_code):
         }), 500
 
 
+@admin_bp.route('/dashboard', methods=['GET'])
+def get_dashboard_stats():
+    try:
+        # Count active users (role = 'user' and is_active = true)
+        active_users_count = User.query.filter(
+            User.role == 'user',
+            User.is_active == True
+        ).count()
+        
+        # Count requests (role = 'user' and is_active = false)
+        requests_count = User.query.filter(
+            User.role == 'user',
+            User.is_active == False
+        ).count()
+        
+        # Count reference owners (role = 'referer' and is_active = true)
+        reference_owners_count = User.query.filter(
+            User.role == 'referer',
+            User.is_active == True
+        ).count()
+        
+        # Count reference payment pending (role = 'user', is_active = true, is_reference_paid = false)
+        reference_payment_pending_count = User.query.filter(
+            User.role == 'user',
+            User.is_active == True,
+            User.is_reference_paid == False
+        ).count()
+        
+        return jsonify({
+            'status': 'success',
+            'data': {
+                'active_users': active_users_count,
+                'requests': requests_count,
+                'reference_owners': reference_owners_count,
+                'reference_payment_pending': reference_payment_pending_count
+            }
+        }), 200
+        
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+
 @admin_bp.route('/admin-register', methods=['POST'])
 def admin_register_user():
     schema = AdminRegistrationSchema()
