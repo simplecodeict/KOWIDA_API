@@ -805,6 +805,70 @@ def get_all_transactions():
         }), 500
 
 
+@admin_bp.route('/transactions/<transaction_id>', methods=['GET'])
+@jwt_required()
+def get_transaction_details(transaction_id):
+    try:
+        # Get transaction by ID
+        transaction = Transaction.query.filter_by(id=transaction_id).first()
+        if not transaction:
+            return jsonify({
+                'status': 'error',
+                'message': 'Transaction not found'
+            }), 404
+        
+        # Get reference owner data
+        reference_owner = User.query.get(transaction.user_id)
+        
+        # Get transaction details with user information
+        transaction_details_data = []
+        for detail in transaction.transaction_details:
+            user = User.query.get(detail.user_id)
+            transaction_details_data.append({
+                'id': detail.id,
+                'user_id': detail.user_id,
+                'user_name': user.full_name if user else None,
+                'user_phone': user.phone if user else None,
+                'user_email': getattr(user, 'email', None) if user else None,
+                'is_active': user.is_active if user else None,
+                'is_reference_paid': user.is_reference_paid if user else None,
+                'paid_amount': float(user.paid_amount) if user else None,
+                'created_at': detail.created_at.isoformat(),
+                'updated_at': detail.updated_at.isoformat()
+            })
+        
+        # Prepare transaction data
+        transaction_data = {
+            'id': transaction.id,
+            'total_reference_count': transaction.total_reference_count,
+            'total_reference_amount': float(transaction.total_reference_amount),
+            'reference_code': transaction.reference_code,
+            'discount_amount': float(transaction.discount_amount),
+            'received_amount': float(transaction.received_amount),
+            'status': transaction.status,
+            'created_at': transaction.created_at.isoformat(),
+            'updated_at': transaction.updated_at.isoformat(),
+            'reference_owner': {
+                'id': reference_owner.id,
+                'full_name': reference_owner.full_name,
+                'phone': reference_owner.phone,
+                'is_active': reference_owner.is_active
+            } if reference_owner else None,
+            'transaction_details': transaction_details_data,
+        }
+        
+        return jsonify({
+            'status': 'success',
+            'data': transaction_data
+        }), 200
+        
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+
 @admin_bp.route('/make-transaction', methods=['POST'])
 @jwt_required()
 def make_transaction():
