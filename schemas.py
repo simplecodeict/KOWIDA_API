@@ -88,4 +88,10 @@ class AdminRegistrationSchema(Schema):
 class MakeTransactionSchema(Schema):
     reference_code = fields.Str(required=True)
     user_id = fields.Int(required=True)
-    total_reference_amount = fields.Decimal(places=2, required=True, validate=validate.Range(min=0)) 
+    total_reference_amount = fields.Decimal(places=2, required=True, validate=validate.Range(min=0))
+
+class TransactionFilterSchema(Schema):
+    reference_code = fields.Str(required=False, allow_none=True)
+    user_id = fields.Int(required=False, allow_none=True)
+    page = fields.Int(required=False, load_default=1, validate=validate.Range(min=1))
+    per_page = fields.Int(required=False, load_default=10, validate=validate.Range(min=1, max=100)) 

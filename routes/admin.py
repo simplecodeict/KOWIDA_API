@@ -9,7 +9,7 @@ from extensions import db
 from marshmallow import ValidationError
 from datetime import datetime
 from sqlalchemy import and_, distinct, or_
-from schemas import UserPhoneSchema, UserFilterSchema, ReferenceCodeSchema, UserRegistrationSchema, AdminRegistrationSchema, MakeTransactionSchema
+from schemas import UserPhoneSchema, UserFilterSchema, ReferenceCodeSchema, UserRegistrationSchema, AdminRegistrationSchema, MakeTransactionSchema, TransactionFilterSchema
 from flask_jwt_extended import jwt_required
 from extensions import colombo_tz
 
@@ -717,6 +717,88 @@ def admin_register_user():
         
     except Exception as e:
         print(f"Unexpected error: {str(e)}")  # Debug log
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+
+@admin_bp.route('/transactions', methods=['GET'])
+@jwt_required()
+def get_all_transactions():
+    schema = TransactionFilterSchema()
+    try:
+        # Validate query parameters
+        params = schema.load(request.args or {})
+        
+        # Base query for transactions with reference owner data
+        query = Transaction.query.join(User, Transaction.user_id == User.id)
+        
+        # Apply reference_code filter if provided
+        if params.get('reference_code'):
+            query = query.filter(Transaction.reference_code == params['reference_code'])
+            
+        # Apply user_id filter if provided
+        if params.get('user_id'):
+            query = query.filter(Transaction.user_id == params['user_id'])
+            
+        # Apply pagination
+        page = params.get('page', 1)
+        per_page = params.get('per_page', 10)
+        pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+        
+        # Prepare response data
+        transactions_data = []
+        for transaction in pagination.items:
+            # Get reference owner data
+            reference_owner = User.query.get(transaction.user_id)
+            
+            # Get transaction details count
+            transaction_details_count = len(transaction.transaction_details)
+            
+            transaction_data = {
+                'id': transaction.id,
+                'total_reference_count': transaction.total_reference_count,
+                'total_reference_amount': float(transaction.total_reference_amount),
+                'reference_code': transaction.reference_code,
+                'discount_amount': float(transaction.discount_amount),
+                'received_amount': float(transaction.received_amount),
+                'status': transaction.status,
+                'created_at': transaction.created_at.isoformat(),
+                'updated_at': transaction.updated_at.isoformat(),
+                'reference_owner': {
+                    'id': reference_owner.id,
+                    'full_name': reference_owner.full_name,
+                    'phone': reference_owner.phone,
+                    'is_active': reference_owner.is_active
+                } if reference_owner else None,
+                'transaction_details_count': transaction_details_count
+            }
+            transactions_data.append(transaction_data)
+            
+        return jsonify({
+            'status': 'success',
+            'data': {
+                'transactions': transactions_data,
+                'pagination': {
+                    'total_items': pagination.total,
+                    'total_pages': pagination.pages,
+                    'current_page': page,
+                    'per_page': per_page,
+                    'has_next': pagination.has_next,
+                    'has_prev': pagination.has_prev
+                }
+            }
+        }), 200
+        
+    except ValidationError as e:
+        return jsonify({
+            'status': 'error',
+            'message': 'Validation error',
+            'errors': e.messages
+        }), 400
+        
+    except Exception as e:
         return jsonify({
             'status': 'error',
             'message': str(e)
