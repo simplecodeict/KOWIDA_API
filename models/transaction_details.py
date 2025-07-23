@@ -7,8 +7,8 @@ class TransactionDetails(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     transaction_id = db.Column(db.String(20), db.ForeignKey('transactions.id'), nullable=False)
-    created_at = db.Column(db.DateTime, default=lambda: datetime.now(colombo_tz))
-    updated_at = db.Column(db.DateTime, default=lambda: datetime.now(colombo_tz), onupdate=lambda: datetime.now(colombo_tz))
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(colombo_tz).replace(tzinfo=None))
+    updated_at = db.Column(db.DateTime, default=lambda: datetime.now(colombo_tz).replace(tzinfo=None), onupdate=lambda: datetime.now(colombo_tz).replace(tzinfo=None))
     
     # Relationships
     user = db.relationship('User', backref='transaction_details')

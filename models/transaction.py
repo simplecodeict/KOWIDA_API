@@ -14,8 +14,8 @@ class Transaction(db.Model):
     discount_amount = db.Column(db.Numeric(10, 2), nullable=False)
     received_amount = db.Column(db.Numeric(10, 2), nullable=False)
     status = db.Column(db.Boolean, default=False, nullable=False)
-    created_at = db.Column(db.DateTime, default=lambda: datetime.now(colombo_tz))
-    updated_at = db.Column(db.DateTime, default=lambda: datetime.now(colombo_tz), onupdate=lambda: datetime.now(colombo_tz))
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(colombo_tz).replace(tzinfo=None))
+    updated_at = db.Column(db.DateTime, default=lambda: datetime.now(colombo_tz).replace(tzinfo=None), onupdate=lambda: datetime.now(colombo_tz).replace(tzinfo=None))
     
     # Relationships
     user = db.relationship('User', backref='transactions')
