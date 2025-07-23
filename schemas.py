@@ -89,6 +89,7 @@ class MakeTransactionSchema(Schema):
     reference_code = fields.Str(required=True)
     user_id = fields.Int(required=True)
     total_reference_amount = fields.Decimal(places=2, required=True, validate=validate.Range(min=0))
+    # receipt will be handled as file upload, not in JSON schema
 
 class TransactionFilterSchema(Schema):
     reference_code = fields.Str(required=False, allow_none=True)

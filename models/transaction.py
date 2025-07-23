@@ -13,6 +13,7 @@ class Transaction(db.Model):
     reference_code = db.Column(db.String(50), nullable=False)
     discount_amount = db.Column(db.Numeric(10, 2), nullable=False)
     received_amount = db.Column(db.Numeric(10, 2), nullable=False)
+    receipt_url = db.Column(db.String(500), nullable=True)
     status = db.Column(db.Boolean, default=False, nullable=False)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(colombo_tz).replace(tzinfo=None))
     updated_at = db.Column(db.DateTime, default=lambda: datetime.now(colombo_tz).replace(tzinfo=None), onupdate=lambda: datetime.now(colombo_tz).replace(tzinfo=None))
@@ -21,7 +22,7 @@ class Transaction(db.Model):
     user = db.relationship('User', backref='transactions')
     transaction_details = db.relationship('TransactionDetails', backref='parent_transaction', cascade='all, delete-orphan')
     
-    def __init__(self, total_reference_count, total_reference_amount, user_id, reference_code, discount_amount, received_amount, status=False):
+    def __init__(self, total_reference_count, total_reference_amount, user_id, reference_code, discount_amount, received_amount, receipt_url=None, status=False):
         self.id = self._generate_transaction_id()
         self.total_reference_count = total_reference_count
         self.total_reference_amount = total_reference_amount
@@ -29,6 +30,7 @@ class Transaction(db.Model):
         self.reference_code = reference_code
         self.discount_amount = discount_amount
         self.received_amount = received_amount
+        self.receipt_url = receipt_url
         self.status = status
     
     @staticmethod
@@ -60,6 +62,7 @@ class Transaction(db.Model):
             'reference_code': self.reference_code,
             'discount_amount': float(self.discount_amount),
             'received_amount': float(self.received_amount),
+            'receipt_url': self.receipt_url,
             'status': self.status,
             'created_at': self.created_at.isoformat(),
             'updated_at': self.updated_at.isoformat()

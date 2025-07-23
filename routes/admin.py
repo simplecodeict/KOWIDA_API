@@ -11,7 +11,7 @@ from datetime import datetime
 from sqlalchemy import and_, distinct, or_
 from schemas import UserPhoneSchema, UserFilterSchema, ReferenceCodeSchema, UserRegistrationSchema, AdminRegistrationSchema, MakeTransactionSchema, TransactionFilterSchema
 from flask_jwt_extended import jwt_required
-from extensions import colombo_tz
+from extensions import colombo_tz, upload_file_to_s3
 
 admin_bp = Blueprint('admin', __name__)
 
@@ -763,6 +763,7 @@ def get_all_transactions():
                 'reference_code': transaction.reference_code,
                 'discount_amount': float(transaction.discount_amount),
                 'received_amount': float(transaction.received_amount),
+                'receipt_url': transaction.receipt_url,
                 'status': transaction.status,
                 'created_at': transaction.created_at.isoformat(),
                 'updated_at': transaction.updated_at.isoformat(),
@@ -845,6 +846,7 @@ def get_transaction_details(transaction_id):
             'reference_code': transaction.reference_code,
             'discount_amount': float(transaction.discount_amount),
             'received_amount': float(transaction.received_amount),
+            'receipt_url': transaction.receipt_url,
             'status': transaction.status,
             'created_at': transaction.created_at.isoformat(),
             'updated_at': transaction.updated_at.isoformat(),
@@ -914,6 +916,7 @@ def get_transactions_by_reference_owner(user_id):
                 'reference_code': transaction.reference_code,
                 'discount_amount': float(transaction.discount_amount),
                 'received_amount': float(transaction.received_amount),
+                'receipt_url': transaction.receipt_url,
                 'status': transaction.status,
                 'created_at': transaction.created_at.isoformat(),
                 'updated_at': transaction.updated_at.isoformat(),
@@ -955,8 +958,74 @@ def get_transactions_by_reference_owner(user_id):
 def make_transaction():
     schema = MakeTransactionSchema()
     try:
+        s3_url = None
+        
+        # Check if receipt is present in request (required)
+        if 'receipt' not in request.files:
+            return jsonify({
+                'status': 'error',
+                'message': 'Receipt file is required',
+                'error_code': 'RECEIPT_REQUIRED'
+            }), 400
+            
+        receipt_file = request.files['receipt']
+        
+        # Validate file
+        if receipt_file.filename == '':
+            return jsonify({
+                'status': 'error',
+                'message': 'No file selected',
+                'error_code': 'NO_FILE_SELECTED'
+            }), 400
+
+        # Validate file type
+        allowed_extensions = {'pdf', 'png', 'jpg', 'jpeg'}
+        file_extension = receipt_file.filename.rsplit('.', 1)[1].lower() if '.' in receipt_file.filename else ''
+        
+        if not file_extension or file_extension not in allowed_extensions:
+            return jsonify({
+                'status': 'error',
+                'message': f'Invalid file type. Allowed types: {", ".join(allowed_extensions)}',
+                'error_code': 'INVALID_FILE_TYPE'
+            }), 400
+
+        # Validate file size (max 5MB)
+        max_size = 5 * 1024 * 1024  # 5MB in bytes
+        file_data = receipt_file.read()
+        if len(file_data) > max_size:
+            return jsonify({
+                'status': 'error',
+                'message': 'File size exceeds maximum limit of 5MB',
+                'error_code': 'FILE_TOO_LARGE'
+            }), 400
+
+        # Upload to S3
+        try:
+            s3_url = upload_file_to_s3(file_data, receipt_file.filename)
+        except ValueError as e:
+            return jsonify({
+                'status': 'error',
+                'message': str(e),
+                'error_code': 'S3_UPLOAD_ERROR'
+            }), 500
+        except Exception as e:
+            logger.error(f"Unexpected error uploading receipt: {str(e)}")
+            return jsonify({
+                'status': 'error',
+                'message': 'Failed to upload receipt. Please try again.',
+                'error_code': 'UPLOAD_ERROR'
+            }), 500
+
         # Validate request data
-        data = schema.load(request.get_json())
+        try:
+            data = schema.load(request.form)
+        except ValidationError as e:
+            return jsonify({
+                'status': 'error',
+                'message': 'Validation error',
+                'errors': e.messages,
+                'error_code': 'VALIDATION_ERROR'
+            }), 400
         
         # Start database transaction
         db.session.begin()
@@ -1015,6 +1084,7 @@ def make_transaction():
                 reference_code=data['reference_code'],
                 discount_amount=reference.discount_amount,
                 received_amount=reference.received_amount,
+                receipt_url=s3_url,  # Store S3 URL
                 status=False  # Initially false, will be set to true at the end
             )
             
@@ -1067,6 +1137,7 @@ def make_transaction():
                         'reference_code': transaction.reference_code,
                         'discount_amount': float(transaction.discount_amount),
                         'received_amount': float(transaction.received_amount),
+                        'receipt_url': transaction.receipt_url,
                         'status': transaction.status,
                         'created_at': transaction.created_at.isoformat()
                     },
