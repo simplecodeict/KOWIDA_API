@@ -9,7 +9,7 @@ from extensions import db
 from marshmallow import ValidationError
 from datetime import datetime
 from sqlalchemy import and_, distinct, or_
-from schemas import UserPhoneSchema, UserFilterSchema, ReferenceCodeSchema, UserRegistrationSchema, AdminRegistrationSchema, MakeTransactionSchema, TransactionFilterSchema
+from schemas import UserPhoneSchema, UserFilterSchema, ReferenceCodeSchema, UserRegistrationSchema, AdminRegistrationSchema, MakeTransactionSchema, TransactionFilterSchema, ReferrerStatisticsSchema
 from flask_jwt_extended import jwt_required
 from extensions import colombo_tz, upload_file_to_s3
 
@@ -945,6 +945,119 @@ def get_transactions_by_reference_owner(user_id):
                 'transactions': transactions_data,
             }
         }), 200
+        
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+
+@admin_bp.route('/referrer-statistics', methods=['POST'])
+@jwt_required()
+def get_referrer_statistics():
+    schema = ReferrerStatisticsSchema()
+    try:
+        # Validate request data
+        data = schema.load(request.get_json())
+        
+        # Get base amount from base_amount table
+        base_amount = BaseAmount.query.first()
+        if not base_amount:
+            return jsonify({
+                'status': 'error',
+                'message': 'Base amount not configured'
+            }), 400
+        
+        base_value = float(base_amount.amount)
+        
+        # Get user using user_id
+        user = User.query.get(data['user_id'])
+        if not user:
+            return jsonify({
+                'status': 'error',
+                'message': 'User not found'
+            }), 404
+        
+        # Get reference data where user's phone matches reference phone (active status)
+        reference = Reference.query.filter_by(
+            phone=user.phone,
+            is_active=True
+        ).first()
+        if not reference:
+            return jsonify({
+                'status': 'error',
+                'message': 'Active reference not found for this user'
+            }), 404
+        
+        # Calculate person reference amount using percentage calculations
+        discount_percentage = float(reference.discount_amount) if reference.discount_amount else 0
+        received_percentage = float(reference.received_amount) if reference.received_amount else 0
+        
+        # Calculate net amount after discount
+        discount_amount = base_value * (discount_percentage / 100)
+        net_amount = base_value - discount_amount
+        
+        # Calculate person received amount
+        person_received_amount = net_amount * (received_percentage / 100)
+        
+        # Get all users who used this promo code
+        users_with_promo = User.query.filter(
+            User.promo_code == reference.code,
+            User.role == 'user'
+        ).all()
+        
+        # Calculate statistics
+        all_user_count = len(users_with_promo)
+        active_user_count = sum(1 for u in users_with_promo if u.is_active)
+        pending_user_count = sum(1 for u in users_with_promo if not u.is_active)
+        
+        reference_paid_count = sum(1 for u in users_with_promo if u.is_active and u.is_reference_paid)
+        reference_pending_count = sum(1 for u in users_with_promo if u.is_active and not u.is_reference_paid)
+        
+        # Calculate earnings
+        total_earning = reference_paid_count * person_received_amount
+        pending_amount = reference_pending_count * person_received_amount
+        
+        return jsonify({
+            'status': 'success',
+            'data': {
+                'user': {
+                    'id': user.id,
+                    'full_name': user.full_name,
+                    'phone': user.phone,
+                    'is_active': user.is_active
+                },
+                'reference': {
+                    'code': reference.code,
+                    'discount_amount': discount_percentage,
+                    'received_amount': received_percentage,
+                    'is_active': reference.is_active
+                },
+                'calculations': {
+                    'base_value': base_value,
+                    'discount_amount': discount_amount,
+                    'net_amount': net_amount,
+                    'person_received_amount': person_received_amount
+                },
+                'statistics': {
+                    'all_user_count': all_user_count,
+                    'active_user_count': active_user_count,
+                    'pending_user_count': pending_user_count,
+                    'reference_paid_count': reference_paid_count,
+                    'reference_pending_count': reference_pending_count,
+                    'total_earning': total_earning,
+                    'pending_amount': pending_amount
+                }
+            }
+        }), 200
+        
+    except ValidationError as e:
+        return jsonify({
+            'status': 'error',
+            'message': 'Validation error',
+            'errors': e.messages
+        }), 400
         
     except Exception as e:
         return jsonify({
