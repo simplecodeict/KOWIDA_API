@@ -548,11 +548,20 @@ def get_dashboard_stats():
             User.is_active == True
         ).count()
         
-        # Count reference payment pending (role = 'user', is_active = true, is_reference_paid = false)
-        reference_payment_pending_count = User.query.filter(
-            User.role == 'user',
-            User.is_active == True,
-            User.is_reference_paid == False
+        # Count reference payment pending (role = 'user', is_active = true, is_reference_paid = false, and promo_code owner is referer)
+        from sqlalchemy import and_, alias
+        UserAlias = alias(User)
+        reference_payment_pending_count = db.session.query(User).join(
+            Reference, User.promo_code == Reference.code
+        ).join(
+            UserAlias, Reference.phone == UserAlias.c.phone
+        ).filter(
+            and_(
+                User.role == 'user',
+                User.is_active == True,
+                User.is_reference_paid == False,
+                UserAlias.c.role == 'referer'  # Reference owner must be referer, not admin
+            )
         ).count()
         
         # Calculate total income (sum of paid_amount for active users with role = 'user')
