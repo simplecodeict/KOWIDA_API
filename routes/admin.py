@@ -869,6 +869,87 @@ def get_transaction_details(transaction_id):
         }), 500
 
 
+@admin_bp.route('/reference-owners/<int:user_id>/transactions', methods=['GET'])
+@jwt_required()
+def get_transactions_by_reference_owner(user_id):
+    try:
+        # Check if reference owner exists
+        reference_owner = User.query.get(user_id)
+        if not reference_owner:
+            return jsonify({
+                'status': 'error',
+                'message': 'Reference owner not found'
+            }), 404
+        
+        # Get all transactions for this reference owner
+        transactions = Transaction.query.filter_by(user_id=user_id).order_by(Transaction.created_at.desc()).all()
+        
+        # Prepare response data
+        transactions_data = []
+        total_reference_count = 0
+        total_reference_amount = 0.0
+        
+        for transaction in transactions:
+            # Get transaction details count
+            transaction_details_count = len(transaction.transaction_details)
+            
+            # Get users in this transaction
+            users_in_transaction = []
+            for detail in transaction.transaction_details:
+                user = User.query.get(detail.user_id)
+                if user:
+                    users_in_transaction.append({
+                        'id': user.id,
+                        'full_name': user.full_name,
+                        'phone': user.phone,
+                        'is_active': user.is_active,
+                        'is_reference_paid': user.is_reference_paid,
+                        'paid_amount': float(user.paid_amount)
+                    })
+            
+            transaction_data = {
+                'id': transaction.id,
+                'total_reference_count': transaction.total_reference_count,
+                'total_reference_amount': float(transaction.total_reference_amount),
+                'reference_code': transaction.reference_code,
+                'discount_amount': float(transaction.discount_amount),
+                'received_amount': float(transaction.received_amount),
+                'status': transaction.status,
+                'created_at': transaction.created_at.isoformat(),
+                'updated_at': transaction.updated_at.isoformat(),
+                'transaction_details_count': transaction_details_count,
+                'users': users_in_transaction
+            }
+            transactions_data.append(transaction_data)
+            
+            # Calculate totals
+            total_reference_count += transaction.total_reference_count
+            total_reference_amount += float(transaction.total_reference_amount)
+        
+        # Prepare reference owner data
+        reference_owner_data = {
+            'id': reference_owner.id,
+            'full_name': reference_owner.full_name,
+            'phone': reference_owner.phone,
+            'is_active': reference_owner.is_active,
+            'role': reference_owner.role
+        }
+        
+        return jsonify({
+            'status': 'success',
+            'data': {
+                'reference_owner': reference_owner_data,
+                'transactions': transactions_data,
+            }
+        }), 200
+        
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+
 @admin_bp.route('/make-transaction', methods=['POST'])
 @jwt_required()
 def make_transaction():
