@@ -40,6 +40,11 @@ def activate_user():
             
         # Update user status
         user.is_active = True
+        
+        # If user doesn't have a promo code, automatically mark reference as paid
+        if not user.promo_code:
+            user.is_reference_paid = True
+            
         user.updated_at = datetime.now(colombo_tz).replace(tzinfo=None)
         db.session.commit()
         
@@ -1013,7 +1018,7 @@ def get_referrer_statistics():
         pending_user_count = sum(1 for u in users_with_promo if not u.is_active)
         
         reference_paid_count = sum(1 for u in users_with_promo if u.is_active and u.is_reference_paid)
-        reference_pending_count = sum(1 for u in users_with_promo if u.is_active and not u.is_reference_paid)
+        reference_pending_count = sum(1 for u in users_with_promo if u.is_active and not u.is_reference_paid and u.promo_code)
         
         # Calculate earnings
         total_earning = reference_paid_count * person_received_amount
