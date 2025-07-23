@@ -438,6 +438,10 @@ def get_users_by_reference(reference_code):
         if 'is_reference_paid' in params and params['is_reference_paid'] is not None:
             query = query.filter(User.is_reference_paid == params['is_reference_paid'])
             
+        # Apply is_active filter if provided
+        if 'is_active' in params and params['is_active'] is not None:
+            query = query.filter(User.is_active == params['is_active'])
+            
         # Apply pagination
         page = params.get('page', 1)
         per_page = params.get('per_page', 10)
@@ -485,13 +489,6 @@ def get_users_by_reference(reference_code):
             'data': {
                 'reference': reference_data,
                 'registered_users': users_data,
-                'summary': {
-                    'total_users': pagination.total,
-                    'active_users': sum(1 for user in users_data if user['is_active']),
-                    'inactive_users': sum(1 for user in users_data if not user['is_active']),
-                    'reference_paid_users': sum(1 for user in users_data if user['is_reference_paid']),
-                    'reference_unpaid_users': sum(1 for user in users_data if not user['is_reference_paid'])
-                },
                 'pagination': {
                     'total_items': pagination.total,
                     'total_pages': pagination.pages,

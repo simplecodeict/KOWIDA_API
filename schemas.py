@@ -61,6 +61,7 @@ class UserFilterSchema(Schema):
 class ReferenceCodeSchema(Schema):
     reference_code = fields.Str(required=True)
     is_reference_paid = fields.Boolean(required=False, allow_none=True)
+    is_active = fields.Boolean(required=False, allow_none=True)
     page = fields.Int(required=False, load_default=1, validate=validate.Range(min=1))
     per_page = fields.Int(required=False, load_default=10, validate=validate.Range(min=1, max=100))
 
