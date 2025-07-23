@@ -2,11 +2,14 @@ from flask import Blueprint, jsonify, request
 from models.user import User
 from models.reference import Reference
 from models.bank_details import BankDetails
+from models.transaction import Transaction
+from models.transaction_details import TransactionDetails
+from models.base_amount import BaseAmount
 from extensions import db
 from marshmallow import ValidationError
 from datetime import datetime
 from sqlalchemy import and_, distinct, or_
-from schemas import UserPhoneSchema, UserFilterSchema, ReferenceCodeSchema, UserRegistrationSchema, AdminRegistrationSchema
+from schemas import UserPhoneSchema, UserFilterSchema, ReferenceCodeSchema, UserRegistrationSchema, AdminRegistrationSchema, MakeTransactionSchema
 from flask_jwt_extended import jwt_required
 from extensions import colombo_tz
 
@@ -714,6 +717,156 @@ def admin_register_user():
         
     except Exception as e:
         print(f"Unexpected error: {str(e)}")  # Debug log
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+
+@admin_bp.route('/make-transaction', methods=['POST'])
+@jwt_required()
+def make_transaction():
+    schema = MakeTransactionSchema()
+    try:
+        # Validate request data
+        data = schema.load(request.get_json())
+        
+        # Start database transaction
+        db.session.begin()
+        
+        try:
+            # Get base amount from base_amount table
+            base_amount = BaseAmount.query.first()
+            if not base_amount:
+                db.session.rollback()
+                return jsonify({
+                    'status': 'error',
+                    'message': 'Base amount not configured'
+                }), 400
+            
+            # Get reference data using reference_code
+            reference = Reference.query.filter_by(code=data['reference_code']).first()
+            if not reference:
+                db.session.rollback()
+                return jsonify({
+                    'status': 'error',
+                    'message': 'Reference code not found'
+                }), 404
+            
+            # Get referrer user (user_id from payload)
+            referrer_user = User.query.get(data['user_id'])
+            if not referrer_user:
+                db.session.rollback()
+                return jsonify({
+                    'status': 'error',
+                    'message': 'Referrer user not found'
+                }), 404
+            
+            # Get users who used this reference code (active and unpaid)
+            eligible_users = User.query.filter(
+                User.promo_code == data['reference_code'],
+                User.is_active == True,
+                User.is_reference_paid == False,
+                User.role == 'user'
+            ).all()
+            
+            if not eligible_users:
+                db.session.rollback()
+                return jsonify({
+                    'status': 'error',
+                    'message': 'No eligible users found for this reference code'
+                }), 400
+            
+            # Calculate total reference count
+            total_reference_count = len(eligible_users)
+            
+            # Create transaction
+            transaction = Transaction(
+                total_reference_count=total_reference_count,
+                total_reference_amount=data['total_reference_amount'],
+                user_id=data['user_id'],
+                reference_code=data['reference_code'],
+                discount_amount=reference.discount_amount,
+                received_amount=reference.received_amount,
+                status=False  # Initially false, will be set to true at the end
+            )
+            
+            db.session.add(transaction)
+            db.session.flush()  # Get the transaction ID
+            
+            # Create transaction details for each eligible user
+            transaction_details_list = []
+            for user in eligible_users:
+                transaction_detail = TransactionDetails(
+                    user_id=user.id,
+                    transaction_id=transaction.id
+                )
+                db.session.add(transaction_detail)
+                transaction_details_list.append(transaction_detail)
+                
+                # Update user's reference payment status
+                user.is_reference_paid = True
+                user.updated_at = datetime.now(colombo_tz).replace(tzinfo=None)
+            
+            # Set transaction status to true (completed)
+            transaction.status = True
+            
+            # Commit all changes
+            db.session.commit()
+            
+            # Prepare response data
+            transaction_details_data = []
+            for detail in transaction_details_list:
+                user = User.query.get(detail.user_id)
+                transaction_details_data.append({
+                    'id': detail.id,
+                    'user_id': detail.user_id,
+                    'user_name': user.full_name if user else None,
+                    'user_phone': user.phone if user else None,
+                    'transaction_id': detail.transaction_id,
+                    'created_at': detail.created_at.isoformat()
+                })
+            
+            return jsonify({
+                'status': 'success',
+                'message': 'Transaction created successfully',
+                'data': {
+                    'transaction': {
+                        'id': transaction.id,
+                        'total_reference_count': transaction.total_reference_count,
+                        'total_reference_amount': float(transaction.total_reference_amount),
+                        'user_id': transaction.user_id,
+                        'referrer_name': referrer_user.full_name,
+                        'reference_code': transaction.reference_code,
+                        'discount_amount': float(transaction.discount_amount),
+                        'received_amount': float(transaction.received_amount),
+                        'status': transaction.status,
+                        'created_at': transaction.created_at.isoformat()
+                    },
+                    'base_amount': float(base_amount.amount),
+                    'transaction_details': transaction_details_data,
+                    'summary': {
+                        'total_users_processed': total_reference_count,
+                        'total_amount_paid': float(transaction.total_reference_amount)
+                    }
+                }
+            }), 201
+            
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({
+                'status': 'error',
+                'message': f'Error creating transaction: {str(e)}'
+            }), 500
+            
+    except ValidationError as e:
+        return jsonify({
+            'status': 'error',
+            'message': 'Validation error',
+            'errors': e.messages
+        }), 400
+        
+    except Exception as e:
         return jsonify({
             'status': 'error',
             'message': str(e)

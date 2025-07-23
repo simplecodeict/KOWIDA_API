@@ -83,4 +83,9 @@ class AdminReferenceDataSchema(Schema):
 class AdminRegistrationSchema(Schema):
     user_data = fields.Nested(AdminUserDataSchema, required=True)
     bank_details = fields.Nested(BankDetailsSchema, required=True)
-    reference_data = fields.Nested(AdminReferenceDataSchema, required=True) 
+    reference_data = fields.Nested(AdminReferenceDataSchema, required=True)
+
+class MakeTransactionSchema(Schema):
+    reference_code = fields.Str(required=True)
+    user_id = fields.Int(required=True)
+    total_reference_amount = fields.Decimal(places=2, required=True, validate=validate.Range(min=0)) 
