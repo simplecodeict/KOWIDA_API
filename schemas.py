@@ -53,6 +53,7 @@ class UserFilterSchema(Schema):
     promo_code = fields.Str(required=False, allow_none=True)
     reference_code = fields.Str(required=False, allow_none=True)
     is_active = fields.Str(required=False, allow_none=True)
+    is_reference_paid = fields.Boolean(required=False, allow_none=True)
     phone = fields.Str(required=False, allow_none=True)
     payment_method = fields.Str(required=False, allow_none=True)
     page = fields.Int(required=False, load_default=1, validate=validate.Range(min=1))

@@ -148,6 +148,10 @@ def get_all_users():
         if 'is_active' in params and params['is_active'] is not None:
             query = query.filter(User.is_active == params['is_active'])
             
+        # Apply is_reference_paid filter if provided
+        if 'is_reference_paid' in params and params['is_reference_paid'] is not None:
+            query = query.filter(User.is_reference_paid == params['is_reference_paid'])
+            
         # Apply promo_code filter if provided
         if params.get('promo_code'):
             query = query.filter(User.promo_code == params['promo_code'])
