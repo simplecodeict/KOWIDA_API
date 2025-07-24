@@ -301,6 +301,94 @@ def login():
             'error_code': 'LOGIN_ERROR'
         }), 500
 
+@auth_bp.route('/admin/login', methods=['POST'])
+def admin_login():
+    schema = LoginSchema()
+    try:
+        # Rate limiting check could be added here
+        
+        # Log request (excluding sensitive data)
+        logger.debug(f"Admin login attempt from IP: {request.remote_addr}")
+        
+        # Validate request data
+        data = schema.load(request.get_json())
+        
+        # Find user by phone
+        user = User.query.filter_by(phone=data['phone']).first()
+        
+        # Use constant-time comparison for password check
+        if not user or not bcrypt.check_password_hash(user.password, data['password']):
+            # Add delay to prevent timing attacks
+            time.sleep(random.uniform(0.1, 0.3))
+            return jsonify({
+                'status': 'error',
+                'message': 'Invalid phone number or password',
+                'error_code': 'INVALID_CREDENTIALS'
+            }), 401
+            
+        # Check if user is active
+        if not user.is_active:
+            return jsonify({
+                'status': 'error',
+                'message': 'Account is not activated',
+                'error_code': 'ACCOUNT_INACTIVE'
+            }), 403
+            
+        # Check if user has admin role
+        if user.role != 'admin':
+            return jsonify({
+                'status': 'error',
+                'message': 'Access denied. Admin privileges required.',
+                'error_code': 'ADMIN_ACCESS_REQUIRED'
+            }), 403
+            
+        # Generate access token
+        access_token = generate_token(user.id)
+        
+        # Create response
+        response_data = {
+            'status': 'success',
+            'message': 'Admin login successful',
+            'data': {
+                'user': {
+                    'id': user.id,
+                    'full_name': user.full_name,
+                    'phone': user.phone,
+                    'url': user.url,
+                    'is_active': user.is_active,
+                    'is_reference_paid': user.is_reference_paid,
+                    'role': user.role
+                },
+                'access_token': access_token
+            }
+        }
+        
+        # Create response object
+        response = jsonify(response_data)
+        
+        # Set secure headers
+        response.headers['X-Content-Type-Options'] = 'nosniff'
+        response.headers['X-Frame-Options'] = 'DENY'
+        response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+        
+        return response, 200
+        
+    except ValidationError as e:
+        return jsonify({
+            'status': 'error',
+            'message': 'Validation error',
+            'errors': e.messages,
+            'error_code': 'VALIDATION_ERROR'
+        }), 400
+        
+    except Exception as e:
+        logger.error(f"Admin login error: {str(e)}", exc_info=True)
+        return jsonify({
+            'status': 'error',
+            'message': 'An error occurred while processing admin login',
+            'error_code': 'ADMIN_LOGIN_ERROR'
+        }), 500
+
 @auth_bp.route('/me', methods=['GET'])
 @jwt_required()
 def get_current_user():
