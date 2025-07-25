@@ -80,7 +80,29 @@ def register():
         elif 'document' in request.files:
             bank_slip = request.files['document']
             
-        # Validate and upload file if present
+        # Validate request data first
+        try:
+            data = schema.load(request.form)
+        except ValidationError as e:
+            return jsonify({
+                'status': 'error',
+                'message': 'Validation error',
+                'errors': e.messages,
+                'error_code': 'VALIDATION_ERROR'
+            }), 400
+        
+        logging.info(f"Received registration data: {data}")
+        
+        # Check if user already exists BEFORE uploading to S3
+        existing_user = User.query.filter_by(phone=data['phone']).first()
+        if existing_user:
+            return jsonify({
+                'status': 'error',
+                'message': 'Phone number already registered',
+                'error_code': 'PHONE_ALREADY_EXISTS'
+            }), 409
+            
+        # Validate and upload file if present (only after phone validation)
         if bank_slip:
             # Validate file
             if bank_slip.filename == '':
@@ -111,7 +133,7 @@ def register():
                     'error_code': 'FILE_TOO_LARGE'
                 }), 400
 
-            # Upload to S3
+            # Upload to S3 (only after all validations pass)
             try:
                 s3_url = upload_file_to_s3(file_data, bank_slip.filename)
             except ValueError as e:
@@ -127,28 +149,6 @@ def register():
                     'message': 'Failed to upload bank slip. Please try again.',
                     'error_code': 'UPLOAD_ERROR'
                 }), 500
-
-        # Validate request data
-        try:
-            data = schema.load(request.form)
-        except ValidationError as e:
-            return jsonify({
-                'status': 'error',
-                'message': 'Validation error',
-                'errors': e.messages,
-                'error_code': 'VALIDATION_ERROR'
-            }), 400
-        
-        logging.info(f"Received registration data: {data}")
-        
-        # Check if user already exists
-        existing_user = User.query.filter_by(phone=data['phone']).first()
-        if existing_user:
-            return jsonify({
-                'status': 'error',
-                'message': 'Phone number already registered',
-                'error_code': 'PHONE_ALREADY_EXISTS'
-            }), 409
             
         # Create new user with S3 URL
         try:
