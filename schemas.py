@@ -7,6 +7,7 @@ class UserRegistrationSchema(Schema):
     promo_code = fields.Str(allow_none=True)
     role = fields.Str(allow_none=True, validate=validate.OneOf(['admin', 'user', 'referer']))
     paid_amount = fields.Decimal(places=2, required=False, allow_none=True, validate=validate.Range(min=0))
+    referal_coin = fields.Decimal(places=2, required=False, allow_none=True, validate=validate.Range(min=0))
     # url field is removed since it will be populated from S3
 
 class LoginSchema(Schema):

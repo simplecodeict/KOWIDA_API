@@ -157,7 +157,12 @@ def register():
             is_active = True if payment_method == 'card_payment' else False
             
             # Get paid_amount from form data, default to 0
-            paid_amount = float(data.get('paid_amount', 0)) if data.get('paid_amount') else 0
+            if data.get('paid_amount'):
+                paid_amount = float(data.get('paid_amount', 0))
+            elif data.get('referal_coin'):
+                paid_amount = float(data.get('referal_coin', 0))
+            else:
+                paid_amount = 0
             
             # Validate paid_amount for user role
             if data.get('role') == 'user' and paid_amount == 0:
