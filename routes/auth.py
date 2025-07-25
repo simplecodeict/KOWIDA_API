@@ -72,11 +72,16 @@ def register():
     schema = UserRegistrationSchema()
     try:
         s3_url = None
+        bank_slip = None
         
-        # Check if bank slip is present in request (optional for card payments)
+        # Check if bank slip or document is present in request
         if 'bank_slip' in request.files:
             bank_slip = request.files['bank_slip']
+        elif 'document' in request.files:
+            bank_slip = request.files['document']
             
+        # Validate and upload file if present
+        if bank_slip:
             # Validate file
             if bank_slip.filename == '':
                 return jsonify({
