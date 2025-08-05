@@ -549,4 +549,92 @@ def verify_token():
             'status': 'error',
             'message': str(e),
             'error_code': 'TOKEN_VERIFICATION_FAILED'
-        }), 401 
+        }), 401
+
+@auth_bp.route('/delete-account/<int:user_id>', methods=['DELETE'])
+def delete_account(user_id):
+    """
+    Delete user account by user ID
+    """
+    try:
+        # Find the user to delete
+        user_to_delete = User.query.get(user_id)
+        if not user_to_delete:
+            return jsonify({
+                'status': 'error',
+                'message': 'User not found',
+                'error_code': 'USER_NOT_FOUND'
+            }), 404
+        
+        # Log the deletion attempt
+        logger.info(f"Deleting account for user {user_to_delete.phone} (ID: {user_to_delete.id})")
+        
+        # Store user info before deletion for logging
+        deleted_user_info = {
+            'id': user_to_delete.id,
+            'phone': user_to_delete.phone,
+            'full_name': user_to_delete.full_name,
+            'role': user_to_delete.role
+        }
+        
+        # Handle related records before deleting user
+        try:
+            # Import related models
+            from models.reference import Reference
+            from models.transaction import Transaction
+            from models.transaction_details import TransactionDetails
+            from models.bank_details import BankDetails
+            
+            # Delete related references
+            references_to_delete = Reference.query.filter_by(phone=user_to_delete.phone).all()
+            for ref in references_to_delete:
+                db.session.delete(ref)
+            
+            # Delete related transactions
+            transactions_to_delete = Transaction.query.filter_by(user_id=user_to_delete.id).all()
+            for trans in transactions_to_delete:
+                # Delete transaction details first
+                TransactionDetails.query.filter_by(transaction_id=trans.id).delete()
+                db.session.delete(trans)
+            
+            # Delete related bank details
+            bank_details_to_delete = BankDetails.query.filter_by(user_id=user_to_delete.id).all()
+            for bank_detail in bank_details_to_delete:
+                db.session.delete(bank_detail)
+            
+            # Now delete the user
+            db.session.delete(user_to_delete)
+            db.session.commit()
+            
+            logger.info(f"Account successfully deleted for user: {deleted_user_info}")
+            
+            return jsonify({
+                'status': 'success',
+                'message': 'Account deleted successfully',
+                'data': {
+                    'deleted_user': {
+                        'id': deleted_user_info['id'],
+                        'phone': deleted_user_info['phone'],
+                        'full_name': deleted_user_info['full_name'],
+                        'deleted_at': datetime.utcnow().isoformat()
+                    }
+                }
+            }), 200
+            
+        except Exception as db_error:
+            logger.error(f"Database error during deletion: {str(db_error)}")
+            db.session.rollback()
+            return jsonify({
+                'status': 'error',
+                'message': 'Failed to delete account due to database constraints',
+                'error_code': 'DATABASE_CONSTRAINT_ERROR'
+            }), 500
+        
+    except Exception as e:
+        logger.error(f"Error deleting account: {str(e)}", exc_info=True)
+        db.session.rollback()
+        return jsonify({
+            'status': 'error',
+            'message': 'An error occurred while deleting the account',
+            'error_code': 'DELETE_ACCOUNT_ERROR'
+        }), 500
