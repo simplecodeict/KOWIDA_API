@@ -140,8 +140,8 @@ def get_all_users():
         # Validate query parameters - empty dict if no parameters provided
         params = schema.load(request.args or {})
         
-        # Base query for users with role = 'user' and their relationships
-        query = User.query.filter(User.role == 'user')\
+        # Base query for users with role = 'user', promo_code != 'SL001' and their relationships
+        query = User.query.filter(User.role == 'user', User.promo_code != 'SL001')\
             .outerjoin(BankDetails)
         
         # Apply is_active filter if provided
@@ -247,8 +247,9 @@ def get_all_requests():
         # Validate query parameters - empty dict if no parameters provided
         params = schema.load(request.args or {})
         
-        # Base query for inactive users with their relationships
+        # Base query for inactive users with their relationships (excluding SL001 promo code)
         query = User.query.filter_by(is_active=False, role='user')\
+            .filter(User.promo_code != 'SL001')\
             .outerjoin(BankDetails)\
             .outerjoin(Reference, User.phone == Reference.phone)
         
@@ -530,16 +531,18 @@ def get_users_by_reference(reference_code):
 @jwt_required()
 def get_dashboard_stats():
     try:
-        # Count active users (role = 'user' and is_active = true)
+        # Count active users (role = 'user', is_active = true, and promo_code != 'SL001')
         active_users_count = User.query.filter(
             User.role == 'user',
-            User.is_active == True
+            User.is_active == True,
+            User.promo_code != 'SL001'
         ).count()
         
-        # Count requests (role = 'user' and is_active = false)
+        # Count requests (role = 'user', is_active = false, and promo_code != 'SL001')
         requests_count = User.query.filter(
             User.role == 'user',
-            User.is_active == False
+            User.is_active == False,
+            User.promo_code != 'SL001'
         ).count()
         
         # Count reference owners (role = 'referer' and is_active = true)
@@ -560,22 +563,25 @@ def get_dashboard_stats():
                 User.role == 'user',
                 User.is_active == True,
                 User.is_reference_paid == False,
+                User.promo_code != 'SL001',
                 UserAlias.c.role == 'referer'  # Reference owner must be referer, not admin
             )
         ).count()
         
-        # Calculate total income (sum of paid_amount for active users with role = 'user')
+        # Calculate total income (sum of paid_amount for active users with role = 'user' and promo_code != 'SL001')
         from sqlalchemy import func
         total_income_result = db.session.query(func.sum(User.paid_amount)).filter(
             User.role == 'user',
-            User.is_active == True
+            User.is_active == True,
+            User.promo_code != 'SL001'
         ).scalar()
         total_income = float(total_income_result) if total_income_result else 0.0
         
-        # Calculate total pending amount (sum of paid_amount for inactive users with role = 'user')
+        # Calculate total pending amount (sum of paid_amount for inactive users with role = 'user' and promo_code != 'SL001')
         total_pending_result = db.session.query(func.sum(User.paid_amount)).filter(
             User.role == 'user',
-            User.is_active == False
+            User.is_active == False,
+            User.promo_code != 'SL001'
         ).scalar()
         total_pending_amount = float(total_pending_result) if total_pending_result else 0.0
         
@@ -749,8 +755,9 @@ def get_all_transactions():
         # Validate query parameters
         params = schema.load(request.args or {})
         
-        # Base query for transactions with reference owner data
-        query = Transaction.query.join(User, Transaction.user_id == User.id)
+        # Base query for transactions with reference owner data (excluding SL001 promo code)
+        query = Transaction.query.join(User, Transaction.user_id == User.id)\
+            .filter(User.promo_code != 'SL001')
         
         # Apply reference_code filter if provided
         if params.get('reference_code'):

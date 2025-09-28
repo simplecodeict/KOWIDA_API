@@ -22,7 +22,7 @@ def create_dummy_user():
     """
     Create a dummy user with the specified credentials:
     - full_name: 'test'
-    - phone: '0785858569' (valid 10-digit phone number)
+    - phone: '0764858569' (valid 10-digit phone number)
     - password: '4858'
     """
     try:
@@ -31,9 +31,9 @@ def create_dummy_user():
         
         with app.app_context():
             # Check if user already exists
-            existing_user = User.query.filter_by(phone='0785858569').first()
+            existing_user = User.query.filter_by(phone='0764858569').first()
             if existing_user:
-                print("User with phone '0785858569' already exists!")
+                print("User with phone '0764858569' already exists!")
                 print(f"User ID: {existing_user.id}")
                 print(f"Full Name: {existing_user.full_name}")
                 print(f"Phone: {existing_user.phone}")
@@ -43,8 +43,8 @@ def create_dummy_user():
             
             # Create new dummy user
             dummy_user = User(
-                full_name='test',
-                phone='0785858569',  # Valid 10-digit phone number
+                full_name='Admin',
+                phone='0764858569',  # Valid 10-digit phone number
                 password='4858',
                 url=None,  # Default value
                 payment_method='card_payment',  # Default value
@@ -86,7 +86,7 @@ def main():
     print("🌱 Starting user seeder...")
     print("Creating dummy user with credentials:")
     print("- Full Name: test")
-    print("- Phone: 0785858569")
+    print("- Phone: 0764858569")
     print("- Password: 4858")
     print("- Other fields: default values")
     print("-" * 50)
