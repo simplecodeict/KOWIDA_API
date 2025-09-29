@@ -531,18 +531,18 @@ def get_users_by_reference(reference_code):
 @jwt_required()
 def get_dashboard_stats():
     try:
-        # Count active users (role = 'user', is_active = true, and promo_code != 'SL001')
+        # Count active users (role = 'user', is_active = true, and (promo_code != 'SL001' OR promo_code is NULL))
         active_users_count = User.query.filter(
             User.role == 'user',
             User.is_active == True,
-            User.promo_code != 'SL001'
+            or_(User.promo_code != 'SL001', User.promo_code.is_(None))
         ).count()
         
-        # Count requests (role = 'user', is_active = false, and promo_code != 'SL001')
+        # Count requests (role = 'user', is_active = false, and (promo_code != 'SL001' OR promo_code is NULL))
         requests_count = User.query.filter(
             User.role == 'user',
             User.is_active == False,
-            User.promo_code != 'SL001'
+            or_(User.promo_code != 'SL001', User.promo_code.is_(None))
         ).count()
         
         # Count reference owners (role = 'referer' and is_active = true)
@@ -563,25 +563,25 @@ def get_dashboard_stats():
                 User.role == 'user',
                 User.is_active == True,
                 User.is_reference_paid == False,
-                User.promo_code != 'SL001',
+                or_(User.promo_code != 'SL001', User.promo_code.is_(None)),
                 UserAlias.c.role == 'referer'  # Reference owner must be referer, not admin
             )
         ).count()
         
-        # Calculate total income (sum of paid_amount for active users with role = 'user' and promo_code != 'SL001')
+        # Calculate total income (sum of paid_amount for active users with role = 'user' and (promo_code != 'SL001' OR promo_code is NULL))
         from sqlalchemy import func
         total_income_result = db.session.query(func.sum(User.paid_amount)).filter(
             User.role == 'user',
             User.is_active == True,
-            User.promo_code != 'SL001'
+            or_(User.promo_code != 'SL001', User.promo_code.is_(None))
         ).scalar()
         total_income = float(total_income_result) if total_income_result else 0.0
         
-        # Calculate total pending amount (sum of paid_amount for inactive users with role = 'user' and promo_code != 'SL001')
+        # Calculate total pending amount (sum of paid_amount for inactive users with role = 'user' and (promo_code != 'SL001' OR promo_code is NULL))
         total_pending_result = db.session.query(func.sum(User.paid_amount)).filter(
             User.role == 'user',
             User.is_active == False,
-            User.promo_code != 'SL001'
+            or_(User.promo_code != 'SL001', User.promo_code.is_(None))
         ).scalar()
         total_pending_amount = float(total_pending_result) if total_pending_result else 0.0
         
