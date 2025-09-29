@@ -140,8 +140,8 @@ def get_all_users():
         # Validate query parameters - empty dict if no parameters provided
         params = schema.load(request.args or {})
         
-        # Base query for users with role = 'user', promo_code != 'SL001' and their relationships
-        query = User.query.filter(User.role == 'user', User.promo_code != 'SL001')\
+        # Base query for users with role = 'user', (promo_code != 'SL001' OR promo_code is NULL) and their relationships
+        query = User.query.filter(User.role == 'user', or_(User.promo_code != 'SL001', User.promo_code.is_(None)))\
             .outerjoin(BankDetails)
         
         # Apply is_active filter if provided
@@ -247,9 +247,9 @@ def get_all_requests():
         # Validate query parameters - empty dict if no parameters provided
         params = schema.load(request.args or {})
         
-        # Base query for inactive users with their relationships (excluding SL001 promo code)
+        # Base query for inactive users with their relationships (excluding SL001 promo code, including users without promo codes)
         query = User.query.filter_by(is_active=False, role='user')\
-            .filter(User.promo_code != 'SL001')\
+            .filter(or_(User.promo_code != 'SL001', User.promo_code.is_(None)))\
             .outerjoin(BankDetails)\
             .outerjoin(Reference, User.phone == Reference.phone)
         
