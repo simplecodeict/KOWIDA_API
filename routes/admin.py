@@ -337,11 +337,12 @@ def get_reference_owners():
         # Validate query parameters - empty dict if no parameters provided
         params = schema.load(request.args or {})
         
-        # Base query for active users with role = 'referer'
+        # Base query for active users with role = 'referer' (excluding those who created SL001 reference)
         query = User.query\
             .filter(User.is_active == True)\
             .filter(User.role == 'referer')\
             .outerjoin(Reference, User.phone == Reference.phone)\
+            .filter(or_(Reference.code != 'SL001', Reference.code.is_(None)))\
             .outerjoin(BankDetails)\
             .distinct()
             
@@ -755,9 +756,9 @@ def get_all_transactions():
         # Validate query parameters
         params = schema.load(request.args or {})
         
-        # Base query for transactions with reference owner data (excluding SL001 promo code)
+        # Base query for transactions with reference owner data (excluding SL001 reference code)
         query = Transaction.query.join(User, Transaction.user_id == User.id)\
-            .filter(User.promo_code != 'SL001')
+            .filter(Transaction.reference_code != 'SL001')
         
         # Apply reference_code filter if provided
         if params.get('reference_code'):

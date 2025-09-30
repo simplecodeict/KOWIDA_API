@@ -256,12 +256,12 @@ def get_sllc_reference_owners():
         # Validate query parameters - empty dict if no parameters provided
         params = schema.load(request.args or {})
         
-        # Base query for active users with role = 'referer' and promo_code = 'SL001'
+        # Base query for active users with role = 'referer' who created SL001 reference
         query = User.query\
             .filter(User.is_active == True)\
             .filter(User.role == 'referer')\
-            .filter(User.promo_code == 'SL001')\
             .outerjoin(Reference, User.phone == Reference.phone)\
+            .filter(Reference.code == 'SL001')\
             .outerjoin(BankDetails)\
             .distinct()
             
@@ -422,9 +422,9 @@ def get_all_sllc_transactions():
         # Validate query parameters
         params = schema.load(request.args or {})
         
-        # Base query for transactions with reference owner data (promo_code = 'SL001')
+        # Base query for transactions with reference owner data (reference_code = 'SL001')
         query = Transaction.query.join(User, Transaction.user_id == User.id)\
-            .filter(User.promo_code == 'SL001')
+            .filter(Transaction.reference_code == 'SL001')
         
         # Apply reference_code filter if provided
         if params.get('reference_code'):
