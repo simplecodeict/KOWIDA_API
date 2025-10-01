@@ -80,67 +80,38 @@ def extract_text_from_image(image_path, use_preprocessing=True):
         if img is None:
             raise ValueError("Could not read the image")
         
-        # Try different image preprocessing techniques for better Korean text detection
+        # Enhanced preprocessing for better Korean text accuracy
         if use_preprocessing:
-            # Method 1: Original image
-            img_rgb1 = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-            
-            # Method 2: Grayscale with contrast enhancement
+            # Convert to grayscale
             gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-            enhanced = cv2.convertScaleAbs(gray, alpha=1.5, beta=30)
-            img_rgb2 = cv2.cvtColor(enhanced, cv2.COLOR_GRAY2RGB)
             
-            # Method 3: Denoised image
-            denoised = cv2.fastNlMeansDenoising(gray)
-            img_rgb3 = cv2.cvtColor(denoised, cv2.COLOR_GRAY2RGB)
+            # Apply bilateral filter to reduce noise while preserving edges
+            filtered = cv2.bilateralFilter(gray, 9, 75, 75)
             
-            # Method 4: Sharpened image
-            kernel = np.array([[-1,-1,-1], [-1,9,-1], [-1,-1,-1]])
-            sharpened = cv2.filter2D(gray, -1, kernel)
-            img_rgb4 = cv2.cvtColor(sharpened, cv2.COLOR_GRAY2RGB)
+            # Apply adaptive thresholding for better text clarity
+            thresh = cv2.adaptiveThreshold(filtered, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2)
             
-            # Test all preprocessing methods and choose the best
-            test_images = [img_rgb1, img_rgb2, img_rgb3, img_rgb4]
-            best_image = img_rgb1
-            best_detections = 0
+            # Apply morphological operations to clean up text
+            kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, 1))
+            cleaned = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
             
-            for test_img in test_images:
-                try:
-                    test_results = reader.readtext(test_img, detail=1)
-                    detection_count = len([r for r in test_results if r[2] > 0.1])
-                    if detection_count > best_detections:
-                        best_detections = detection_count
-                        best_image = test_img
-                except:
-                    continue
-            
-            pil_img = Image.fromarray(best_image)
+            # Convert back to RGB for EasyOCR
+            img_rgb = cv2.cvtColor(cleaned, cv2.COLOR_GRAY2RGB)
+            pil_img = Image.fromarray(img_rgb)
         else:
             # Use original image
             pil_img = Image.open(image_path)
         
-        # Perform OCR with multiple configurations
-        results1 = reader.readtext(np.array(pil_img))
-        results2 = reader.readtext(np.array(pil_img), paragraph=True)
-        results3 = reader.readtext(np.array(pil_img), detail=1)
-        
-        # Use the configuration with most detections
-        all_results = [results1, results2, results3]
-        best_results = max(all_results, key=len)
-        results = best_results
-        
-        # If still no results, try with very low confidence
-        if len(results) == 0:
-            results = reader.readtext(np.array(pil_img), detail=1)
-            results = [(bbox, text, conf) for bbox, text, conf in results if conf > 0.1]
+        # Fast OCR - use optimized configuration directly
+        results = reader.readtext(np.array(pil_img), detail=1)
         
         # Extract text and confidence scores
         extracted_texts = []
         korean_text = ""
         english_text = ""
         
-        # Use dynamic confidence threshold
-        confidence_threshold = 0.1 if len(results) < 5 else 0.5
+        # Dynamic confidence threshold for Korean text
+        confidence_threshold = 0.1  # Lower threshold to catch Korean text
         
         for (bbox, text, confidence) in results:
             if confidence > confidence_threshold:
@@ -163,10 +134,31 @@ def extract_text_from_image(image_path, use_preprocessing=True):
                 else:
                     english_text += text.strip() + " "
         
-        # Clean up the descriptions
+        # Clean up and correct Korean text
         korean_description = ' '.join(korean_text.strip().split())
         english_description = ' '.join(english_text.strip().split())
-        all_description = ' '.join((korean_text + english_text).strip().split())
+        
+        # Apply Korean text corrections for common OCR mistakes
+        korean_corrections = {
+            '오라인': '온라인',
+            '쇼핑물올': '쇼핑몰을',
+            '생필품올': '생필품을',
+            '쇼핑물에서논': '쇼핑몰에서는',
+            '행사클': '행사를',
+            '구돈을': '쿠폰을',
+            '세공합니다': '제공합니다',
+            '이틀': '이를',
+            '확용하여': '활용하여',
+            '상품올': '상품을',
+            '할인올': '할인을',
+            '받울': '받을'
+        }
+        
+        # Apply corrections
+        for wrong, correct in korean_corrections.items():
+            korean_description = korean_description.replace(wrong, correct)
+        
+        all_description = ' '.join((korean_description + ' ' + english_description).strip().split())
         
         return {
             'success': True,

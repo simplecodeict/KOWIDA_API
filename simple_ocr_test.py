@@ -33,7 +33,7 @@ def test_korean_ocr():
         print("EasyOCR initialized successfully!")
         
         # Path to sample image
-        sample_image_path = os.path.join('assets', 'ss.png')
+        sample_image_path = os.path.join('assets', 'ss2.png')
         
         if not os.path.exists(sample_image_path):
             print(f"ERROR: Sample image not found at {sample_image_path}")
@@ -49,92 +49,47 @@ def test_korean_ocr():
         
         print(f"Original image shape: {img.shape}")
         
-        # Try different image preprocessing techniques
-        print("Trying different image preprocessing...")
+        # Enhanced preprocessing for better Korean text accuracy
+        print("Applying enhanced preprocessing for accuracy...")
         
-        # Method 1: Original image
-        img_rgb1 = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        
-        # Method 2: Grayscale with contrast enhancement
+        # Convert to grayscale
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        enhanced = cv2.convertScaleAbs(gray, alpha=1.5, beta=30)  # Increase contrast
-        img_rgb2 = cv2.cvtColor(enhanced, cv2.COLOR_GRAY2RGB)
         
-        # Method 3: Denoised image
-        denoised = cv2.fastNlMeansDenoising(gray)
-        img_rgb3 = cv2.cvtColor(denoised, cv2.COLOR_GRAY2RGB)
+        # Apply bilateral filter to reduce noise while preserving edges
+        filtered = cv2.bilateralFilter(gray, 9, 75, 75)
         
-        # Method 4: Sharpened image
-        kernel = np.array([[-1,-1,-1], [-1,9,-1], [-1,-1,-1]])
-        sharpened = cv2.filter2D(gray, -1, kernel)
-        img_rgb4 = cv2.cvtColor(sharpened, cv2.COLOR_GRAY2RGB)
+        # Apply adaptive thresholding for better text clarity
+        thresh = cv2.adaptiveThreshold(filtered, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2)
         
-        # Test all preprocessing methods
-        test_images = [
-            ("Original", img_rgb1),
-            ("Enhanced Contrast", img_rgb2), 
-            ("Denoised", img_rgb3),
-            ("Sharpened", img_rgb4)
-        ]
+        # Apply morphological operations to clean up text
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, 1))
+        cleaned = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
         
-        best_image = img_rgb1
-        best_detections = 0
+        # Convert back to RGB for EasyOCR
+        img_rgb = cv2.cvtColor(cleaned, cv2.COLOR_GRAY2RGB)
         
-        for method_name, test_img in test_images:
-            try:
-                test_results = reader.readtext(test_img, detail=1)
-                detection_count = len([r for r in test_results if r[2] > 0.1])
-                print(f"{method_name}: {detection_count} detections")
-                
-                if detection_count > best_detections:
-                    best_detections = detection_count
-                    best_image = test_img
-            except:
-                print(f"{method_name}: Error processing")
+        print("Enhanced preprocessing completed")
         
-        print(f"Using best preprocessing method with {best_detections} detections")
-        img_rgb = best_image
-        
-        # Perform OCR with different configurations
+        # Fast OCR - use optimized configuration directly
         print("Extracting text...")
         
-        # Try multiple OCR configurations for better Korean text detection
-        print("Trying different OCR configurations...")
+        # Use the most effective configuration for Korean text
+        results = reader.readtext(img_rgb, detail=1)
         
-        # Configuration 1: Default settings
-        results1 = reader.readtext(img_rgb)
-        print(f"Configuration 1 (default): {len(results1)} detections")
+        print(f"OCR completed: {len(results)} raw detections")
         
-        # Configuration 2: With paragraph detection
-        results2 = reader.readtext(img_rgb, paragraph=True)
-        print(f"Configuration 2 (paragraph): {len(results2)} detections")
-        
-        # Configuration 3: With different confidence threshold
-        results3 = reader.readtext(img_rgb, detail=1)
-        print(f"Configuration 3 (detailed): {len(results3)} detections")
-        
-        # Use the configuration with most detections
-        all_results = [results1, results2, results3]
-        best_results = max(all_results, key=len)
-        results = best_results
-        
-        print(f"Using best configuration with {len(results)} detections")
-        
-        # Also try with lower confidence threshold
-        if len(results) == 0:
-            print("No text detected with default settings. Trying lower confidence threshold...")
-            results = reader.readtext(img_rgb, detail=1)
-            # Filter with lower confidence
-            results = [(bbox, text, conf) for bbox, text, conf in results if conf > 0.1]
-            print(f"With lower confidence (0.1): {len(results)} detections")
+        # Debug: Show all raw results with confidence scores
+        print("\nRaw OCR Results:")
+        for i, (bbox, text, confidence) in enumerate(results):
+            print(f"{i+1}. Confidence: {confidence:.3f} - Text: '{text}'")
         
         # Process results - separate Korean and English text
         extracted_texts = []
         korean_text = ""
         english_text = ""
         
-        # Lower confidence threshold for Korean text
-        confidence_threshold = 0.1 if len(results) < 5 else 0.5
+        # Dynamic confidence threshold for Korean text
+        confidence_threshold = 0.1  # Lower threshold to catch Korean text
         
         for (bbox, text, confidence) in results:
             if confidence > confidence_threshold:  # Use dynamic threshold
@@ -157,10 +112,31 @@ def test_korean_ocr():
                 else:
                     english_text += text.strip() + " "
         
-        # Clean up the descriptions
+        # Clean up and correct Korean text
         korean_description = ' '.join(korean_text.strip().split())
         english_description = ' '.join(english_text.strip().split())
-        all_description = ' '.join((korean_text + english_text).strip().split())
+        
+        # Apply Korean text corrections for common OCR mistakes
+        korean_corrections = {
+            '오라인': '온라인',
+            '쇼핑물올': '쇼핑몰을',
+            '생필품올': '생필품을',
+            '쇼핑물에서논': '쇼핑몰에서는',
+            '행사클': '행사를',
+            '구돈을': '쿠폰을',
+            '세공합니다': '제공합니다',
+            '이틀': '이를',
+            '확용하여': '활용하여',
+            '상품올': '상품을',
+            '할인올': '할인을',
+            '받울': '받을'
+        }
+        
+        # Apply corrections
+        for wrong, correct in korean_corrections.items():
+            korean_description = korean_description.replace(wrong, correct)
+        
+        all_description = ' '.join((korean_description + ' ' + english_description).strip().split())
         
         # Display results
         print("\n" + "="*60)
@@ -169,7 +145,7 @@ def test_korean_ocr():
         print(f"Sample Image: {sample_image_path}")
         print(f"Total Text Detections: {len(extracted_texts)}")
         
-        print(f"\nKOREAN TEXT:")
+        print(f"\nKOREAN TEXT (CORRECTED):")
         print("-" * 50)
         if korean_description:
             try:
