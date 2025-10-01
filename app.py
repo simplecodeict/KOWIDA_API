@@ -86,6 +86,7 @@ def create_app():
     from routes.admin import admin_bp
     from routes.base_amount import base_amount_bp
     from routes.sllc import sllc_bp
+    from routes.ocr import ocr_bp
     
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
     app.register_blueprint(bank_bp, url_prefix='/api')
@@ -93,6 +94,7 @@ def create_app():
     app.register_blueprint(admin_bp, url_prefix='/api/admin')
     app.register_blueprint(base_amount_bp, url_prefix='/api')
     app.register_blueprint(sllc_bp, url_prefix='/api/sllc')
+    app.register_blueprint(ocr_bp, url_prefix='/api/ocr')
     
     # JWT error handlers
     @jwt.expired_token_loader
