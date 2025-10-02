@@ -5,14 +5,11 @@ This service provides unlimited, free translation capabilities for Korean text t
 
 import logging
 import time
-from typing import Optional, Dict, Any
+from typing import Dict, Any
 from functools import lru_cache
 import torch
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, pipeline
 import threading
-import asyncio
-from concurrent.futures import ThreadPoolExecutor
-import queue
 
 logger = logging.getLogger(__name__)
 
@@ -32,10 +29,7 @@ class TranslationService:
         self._initialized = False
         
         # Performance optimizations for high-volume usage
-        self.executor = ThreadPoolExecutor(max_workers=4)  # Adjust based on your server capacity
-        self.request_queue = queue.Queue(maxsize=100)  # Limit concurrent requests
-        self.active_requests = 0
-        self.max_concurrent_requests = 10  # Adjust based on your server capacity
+        # Thread-safe initialization
         
     def _initialize_model(self):
         """Initialize the NLLB model and tokenizer."""
@@ -226,25 +220,6 @@ class TranslationService:
             self.translate_cached.cache_clear()
             logger.info("Translation cache cleared")
     
-    def get_cache_stats(self) -> Dict[str, Any]:
-        """Get cache statistics for monitoring."""
-        if self._initialized:
-            cache_info = self.translate_cached.cache_info()
-            return {
-                'hits': cache_info.hits,
-                'misses': cache_info.misses,
-                'current_size': cache_info.currsize,
-                'max_size': cache_info.maxsize,
-                'hit_rate': cache_info.hits / (cache_info.hits + cache_info.misses) if (cache_info.hits + cache_info.misses) > 0 else 0
-            }
-        return {}
-    
-    def translate_async(self, text: str, use_cache: bool = True):
-        """
-        Asynchronous translation for better performance with high concurrent requests.
-        Returns a future that can be awaited.
-        """
-        return self.executor.submit(self.translate, text, use_cache)
     
     def translate_korean_to_both(self, text: str, use_cache: bool = True) -> Dict[str, Any]:
         """
