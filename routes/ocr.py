@@ -5,6 +5,7 @@ This module handles image processing and text extraction using EasyOCR
 
 import os
 import logging
+import time
 from flask import Blueprint, request, jsonify, current_app
 import easyocr
 from PIL import Image
@@ -23,89 +24,115 @@ ocr_bp = Blueprint('ocr', __name__)
 # This will be initialized once when the module is imported
 reader = None
 
+# Note: Removed file-based caching since we now process images directly from memory
+
 def initialize_reader():
-    """Initialize EasyOCR reader"""
+    """Initialize EasyOCR reader with optimized settings"""
     global reader
     if reader is None:
         try:
-            # Initialize EasyOCR with Korean and English languages
-            reader = easyocr.Reader(['ko', 'en'], gpu=False)  # Set gpu=True if you have CUDA
+            # Initialize EasyOCR with optimized settings for speed
+            reader = easyocr.Reader(
+                ['ko', 'en'], 
+                gpu=False,  # Set gpu=True if you have CUDA
+                verbose=False,  # Reduce logging for speed
+                quantize=True,  # Use quantization for faster processing
+                model_storage_directory=None,  # Use default model storage
+                download_enabled=True
+            )
             logger.info("EasyOCR initialized successfully with Korean and English support")
             return True
+        except ImportError as e:
+            logger.error(f"EasyOCR not installed: {e}")
+            reader = None
+            return False
         except Exception as e:
             logger.error(f"Failed to initialize EasyOCR: {e}")
             reader = None
             return False
     return True
 
-def preprocess_image(image_path):
-    """
-    Preprocess image to improve OCR accuracy
-    """
-    try:
-        # Read image
-        img = cv2.imread(image_path)
-        if img is None:
-            raise ValueError("Could not read image")
-        
-        # Convert to grayscale
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        
-        # Apply Gaussian blur to reduce noise
-        blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-        
-        # Apply adaptive thresholding
-        thresh = cv2.adaptiveThreshold(
-            blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2
-        )
-        
-        # Morphological operations to clean up the image
-        kernel = np.ones((1, 1), np.uint8)
-        cleaned = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
-        
-        return cleaned
-    except Exception as e:
-        logger.error(f"Error preprocessing image: {e}")
-        return None
+# Removed image hashing function since we no longer cache files
 
-def extract_text_from_image(image_path, use_preprocessing=True):
+def validate_image_array(img_array):
+    """Validate image array before processing"""
+    try:
+        if img_array is None:
+            return False, "No image data provided"
+        
+        if img_array.size == 0:
+            return False, "Empty image data"
+        
+        # Check image dimensions
+        if len(img_array.shape) < 2:
+            return False, "Invalid image format"
+        
+        height, width = img_array.shape[:2]
+        if width < 10 or height < 10:
+            return False, "Image too small (minimum 10x10 pixels)"
+        
+        if width > 5000 or height > 5000:
+            return False, "Image too large (maximum 5000x5000 pixels)"
+        
+        return True, "Valid image"
+        
+    except Exception as e:
+        return False, f"Error validating image: {str(e)}"
+
+# Removed file-based preprocessing function - now using in-memory processing only
+
+def extract_text_from_image_memory(img_array, use_preprocessing=True):
     """
-    Extract Korean text from image using EasyOCR with improved detection
+    Extract Korean text from image array (in-memory processing)
     """
+    start_time = time.time()
+    
     if not initialize_reader():
-        raise Exception("Failed to initialize EasyOCR reader")
+        return {
+            'success': False,
+            'error': "Failed to initialize OCR engine",
+            'korean_text': '',
+            'total_detections': 0
+        }
     
     try:
-        # Read and process the image
-        img = cv2.imread(image_path)
-        if img is None:
-            raise ValueError("Could not read the image")
+        # Validate image array
+        is_valid, error_msg = validate_image_array(img_array)
+        if not is_valid:
+            return {
+                'success': False,
+                'error': f"Image validation failed: {error_msg}",
+                'korean_text': '',
+                'total_detections': 0
+            }
         
-        # Enhanced preprocessing for better Korean text accuracy on large/unclear images
+        # Optimized preprocessing
         if use_preprocessing:
             # Convert to grayscale
-            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            gray = cv2.cvtColor(img_array, cv2.COLOR_BGR2GRAY)
             
-            # Resize image if it's too large (for better processing)
+            # Optimize image size for processing speed
             height, width = gray.shape
-            if width > 1000:
-                scale = 1000 / width
+            if width > 1200:  # Increased threshold for better quality
+                scale = 1200 / width
                 new_width = int(width * scale)
                 new_height = int(height * scale)
                 gray = cv2.resize(gray, (new_width, new_height), interpolation=cv2.INTER_AREA)
             
-            # Apply lighter preprocessing to preserve more text
-            # Apply bilateral filter to reduce noise while preserving edges
+            # Apply optimized preprocessing pipeline
+            # Use bilateral filter for noise reduction while preserving edges
             filtered = cv2.bilateralFilter(gray, 9, 75, 75)
             
-            # Apply CLAHE (Contrast Limited Adaptive Histogram Equalization) for better contrast
-            clahe = cv2.createCLAHE(clipLimit=1.5, tileGridSize=(8,8))  # Reduced clip limit
+            # Apply CLAHE for better contrast
+            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
             enhanced = clahe.apply(filtered)
             
-            # Apply adaptive thresholding for better text clarity
-            thresh = cv2.adaptiveThreshold(enhanced, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2)
+            # Apply adaptive thresholding
+            thresh = cv2.adaptiveThreshold(
+                enhanced, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2
+            )
             
-            # Apply morphological operations to clean up text
+            # Minimal morphological operations for speed
             kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, 1))
             cleaned = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
             
@@ -114,15 +141,20 @@ def extract_text_from_image(image_path, use_preprocessing=True):
             pil_img = Image.fromarray(img_rgb)
         else:
             # Use original image
-            pil_img = Image.open(image_path)
+            pil_img = Image.fromarray(cv2.cvtColor(img_array, cv2.COLOR_BGR2RGB))
         
-        # Fast OCR - use optimized configuration directly
-        results = reader.readtext(np.array(pil_img), detail=1)
+        # Optimized OCR with better parameters
+        results = reader.readtext(
+            np.array(pil_img), 
+            detail=1,
+            paragraph=False,  # Disable paragraph grouping for speed
+            width_ths=0.7,    # Optimize width threshold
+            height_ths=0.7    # Optimize height threshold
+        )
         
         # Extract text and confidence scores
         extracted_texts = []
         korean_text = ""
-        # english_text = ""  # Commented out - Korean only mode
         
         # Very low confidence threshold for large/complex images
         confidence_threshold = 0.05  # Very low threshold to catch more text
@@ -151,33 +183,51 @@ def extract_text_from_image(image_path, use_preprocessing=True):
                 
                 if has_korean:
                     korean_text += text.strip() + " "
-                # else:
-                #     english_text += text.strip() + " "  # Commented out - Korean only mode
         
         # Clean up text
         korean_description = ' '.join(korean_text.strip().split())
         
         # Apply comprehensive corrections using the corrections module
-        korean_description, _ = apply_all_corrections(
-            korean_description, ""  # Pass empty string for English - Korean only mode
-        )
+        try:
+            korean_description, _ = apply_all_corrections(
+                korean_description, ""  # Pass empty string for English - Korean only mode
+            )
+        except Exception as e:
+            logger.warning(f"Failed to apply corrections: {e}")
+            # Continue without corrections if they fail
         
-        return {
+        # Prepare result
+        result = {
             'success': True,
             'korean_text': korean_description,
-            'total_detections': len(extracted_texts)
+            'total_detections': len(extracted_texts),
+            'processing_time': round(time.time() - start_time, 3)
         }
         
+        return result
+        
+    except MemoryError as e:
+        logger.error(f"Memory error during OCR processing: {e}")
+        return {
+            'success': False,
+            'error': "Image too large or complex for processing",
+            'korean_text': '',
+            'total_detections': 0
+        }
     except Exception as e:
         logger.error(f"Error extracting text from image: {e}")
         return {
             'success': False,
-            'error': str(e),
+            'error': "Failed to process image",
             'korean_text': '',
             'total_detections': 0
         }
 
+# Removed file-based extraction function - now using in-memory processing only
 
+
+
+# Removed cache endpoints since we now process images directly from memory
 
 @ocr_bp.route('/corrections/stats', methods=['GET'])
 def corrections_stats():
@@ -277,9 +327,12 @@ def add_correction():
 @ocr_bp.route('/extract-text', methods=['POST'])
 def extract_text_endpoint():
     """
-    Extract text from uploaded image
+    Extract text from uploaded image with optimized processing and caching
     """
+    start_time = time.time()
+    
     try:
+        # Check if image file is provided
         if 'image' not in request.files:
             return jsonify({
                 'success': False,
@@ -295,84 +348,86 @@ def extract_text_endpoint():
                 'korean_text': ''
             }), 400
         
-        # Validate file type
-        allowed_extensions = {'png', 'jpg', 'jpeg', 'gif', 'bmp', 'tiff'}
-        if not ('.' in file.filename and 
-                file.filename.rsplit('.', 1)[1].lower() in allowed_extensions):
+        # Enhanced file validation
+        allowed_extensions = {'png', 'jpg', 'jpeg', 'gif', 'bmp', 'tiff', 'webp'}
+        file_extension = None
+        
+        if '.' in file.filename:
+            file_extension = file.filename.rsplit('.', 1)[1].lower()
+        
+        if not file_extension or file_extension not in allowed_extensions:
             return jsonify({
                 'success': False,
-                'error': 'Invalid file type. Please upload an image file (PNG, JPG, JPEG, GIF, BMP, TIFF)',
+                'error': f'Invalid file type. Supported formats: {", ".join(allowed_extensions)}',
                 'korean_text': ''
             }), 400
         
-        # Secure filename and save temporarily
-        filename = secure_filename(file.filename)
-        temp_path = os.path.join('temp', filename)
+        # Check file size before saving
+        file.seek(0, 2)  # Seek to end
+        file_size = file.tell()
+        file.seek(0)  # Reset to beginning
         
-        # Create temp directory if it doesn't exist
-        try:
-            os.makedirs('temp', exist_ok=True)
-        except OSError as e:
-            logger.error(f"Failed to create temp directory: {e}")
+        if file_size > 10 * 1024 * 1024:  # 10MB limit
             return jsonify({
                 'success': False,
-                'error': 'Failed to create temporary directory',
+                'error': 'File too large. Maximum size is 10MB',
                 'korean_text': ''
-            }), 500
+            }), 400
         
-        # Save uploaded file
-        try:
-            file.save(temp_path)
-        except Exception as e:
-            logger.error(f"Failed to save uploaded file: {e}")
+        if file_size == 0:
             return jsonify({
                 'success': False,
-                'error': 'Failed to save uploaded file',
+                'error': 'Empty file provided',
                 'korean_text': ''
-            }), 500
+            }), 400
         
+        # Process image directly from memory - no file saving needed
         try:
-            # Initialize OCR reader if not already done
-            if not initialize_reader():
+            # Read image data directly from uploaded file
+            file.seek(0)  # Reset file pointer to beginning
+            image_data = file.read()
+            
+            # Convert bytes to numpy array for OpenCV
+            nparr = np.frombuffer(image_data, np.uint8)
+            img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            
+            if img is None:
                 return jsonify({
                     'success': False,
-                    'error': 'Failed to initialize OCR engine',
+                    'error': 'Invalid image format or corrupted file',
                     'korean_text': ''
-                }), 500
+                }), 400
             
-            # Extract text
-            result = extract_text_from_image(temp_path)
-            
-            if not result['success']:
-                return jsonify({
-                    'success': False,
-                    'error': result.get('error', 'Failed to extract text from image'),
-                    'korean_text': ''
-                }), 500
-            
-            # Simplified response with only Korean text
-            response = {
-                'success': True,
-                'korean_text': str(result.get('korean_text', '')),
-                'total_detections': int(result.get('total_detections', 0))
-            }
-            
-            return jsonify(response)
+            logger.info(f"Processing image directly from memory: {file.filename} ({file_size} bytes)")
             
         except Exception as e:
-            logger.error(f"Error during text extraction: {e}")
+            logger.error(f"Failed to process image from memory: {e}")
             return jsonify({
                 'success': False,
-                'error': 'Failed to process image',
+                'error': 'Failed to process uploaded image',
                 'korean_text': ''
             }), 500
-        finally:
-            # Clean up temporary file
-            try:
-                if os.path.exists(temp_path):
-                    os.remove(temp_path)
-            except Exception as e:
-                logger.warning(f"Failed to clean up temporary file {temp_path}: {e}")
+        
+        # Process image directly from memory - no file operations needed
+        result = extract_text_from_image_memory(img)
+        
+        if not result['success']:
+            return jsonify({
+                'success': False,
+                'error': result.get('error', 'Failed to extract text from image'),
+                'korean_text': ''
+            }), 500
+        
+        # Enhanced response with processing information
+        response = {
+            'success': True,
+            'korean_text': str(result.get('korean_text', '')),
+            'total_detections': int(result.get('total_detections', 0)),
+            'processing_time': round(time.time() - start_time, 3)
+        }
+        
+        logger.info(f"OCR completed in {response['processing_time']}s for {file.filename}")
+        return jsonify(response)
                 
     except Exception as e:
         logger.error(f"Error in extract text endpoint: {e}")
