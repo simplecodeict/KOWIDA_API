@@ -20,7 +20,7 @@ class UserRegistrationSchema(Schema):
 class PreRegisterSchema(Schema):
     full_name = fields.Str(required=True, validate=validate.Length(min=2))
     phone = fields.Str(required=True, validate=validate.Length(min=9, max=10))
-    password = fields.Str(required=False, allow_none=True, missing=None, validate=validate_password_if_provided)
+    password = fields.Str(required=False, allow_none=True, load_default=None, validate=validate_password_if_provided)
 
 class LoginSchema(Schema):
     phone = fields.Str(required=True, validate=validate.Regexp(
