@@ -16,6 +16,7 @@ class User(db.Model):
     payment_method = db.Column(db.String(50), nullable=False, default='card_payment')
     promo_code = db.Column(db.String(255), nullable=True, index=True)
     role = db.Column(Enum('admin', 'user', 'referer', name='user_roles'), default='user', nullable=False)
+    status = db.Column(Enum('pre-register', 'pending', 'register', name='user_status'), default='register', nullable=False)
     is_active = db.Column(db.Boolean, default=False)
     is_reference_paid = db.Column(db.Boolean, default=False)
     paid_amount = db.Column(db.Numeric(10, 2), default=0, nullable=False)
@@ -29,7 +30,7 @@ class User(db.Model):
                                backref=db.backref('referrer', lazy=True),
                                lazy=True)
     
-    def __init__(self, full_name, phone, password, url, payment_method='card_payment', promo_code=None, role=None, paid_amount=0):
+    def __init__(self, full_name, phone, password, url, payment_method='card_payment', promo_code=None, role=None, paid_amount=0, status='register'):
         self.full_name = full_name
         self.phone = phone
         self.password = password  # This will use the password.setter
@@ -37,6 +38,7 @@ class User(db.Model):
         self.payment_method = payment_method
         self.promo_code = promo_code
         self.role = role  # Will be validated and defaulted to 'user' if None
+        self.status = status  # Will be validated and defaulted to 'register' if None
         self.paid_amount = paid_amount
         self.is_reference_paid = False
         self.is_active = False
@@ -97,7 +99,7 @@ class User(db.Model):
             return 'card_payment'  # Default to card_payment if not provided
         
         # Validate payment method (allow common payment methods)
-        allowed_methods = ['card_payment', 'bank_deposit', 'bank_transfer', 'cash', 'online_payment']
+        allowed_methods = ['card_payment', 'bank_deposit', 'bank_transfer', 'cash', 'online_payment', 'pending']
         if payment_method.lower() not in allowed_methods:
             raise ValueError(f"Invalid payment method. Allowed methods: {', '.join(allowed_methods)}")
             
@@ -115,6 +117,18 @@ class User(db.Model):
             
         return role.lower()
 
+    @validates('status')
+    def validate_status(self, key, status):
+        if not status:
+            return 'register'  # Default to register if not provided
+        
+        # Validate status (allow only specified statuses)
+        allowed_statuses = ['pre-register', 'pending', 'register']
+        if status.lower() not in allowed_statuses:
+            raise ValueError(f"Invalid status. Allowed statuses: {', '.join(allowed_statuses)}")
+            
+        return status.lower()
+
     @validates('paid_amount')
     def validate_paid_amount(self, key, paid_amount):
         if paid_amount is None:
@@ -130,9 +144,11 @@ class User(db.Model):
         if paid_amount < 0:
             raise ValueError("Paid amount cannot be negative")
         
-        # If role is 'user', paid_amount cannot be 0
+        # If role is 'user', paid_amount cannot be 0 (unless payment_method is 'pending')
         if hasattr(self, 'role') and self.role == 'user' and paid_amount == 0:
-            raise ValueError("Paid amount cannot be 0 for users with role 'user'")
+            payment_method = getattr(self, 'payment_method', None)
+            if payment_method != 'pending':
+                raise ValueError("Paid amount cannot be 0 for users with role 'user'")
         
         return paid_amount
 

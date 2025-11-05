@@ -1,5 +1,12 @@
 from marshmallow import Schema, fields, validate, ValidationError
 
+def validate_password_if_provided(value):
+    """Validate password only if it's provided"""
+    if value is not None and value != '':
+        if not (len(value) == 4 and value.isdigit()):
+            raise ValidationError("Password must be exactly 4 digits (0-9)")
+    return value
+
 class UserRegistrationSchema(Schema):
     full_name = fields.Str(required=True, validate=validate.Length(min=2))
     phone = fields.Str(required=True, validate=validate.Length(min=9, max=10))
@@ -9,6 +16,11 @@ class UserRegistrationSchema(Schema):
     paid_amount = fields.Decimal(places=2, required=False, allow_none=True, validate=validate.Range(min=0))
     referal_coin = fields.Decimal(places=2, required=False, allow_none=True, validate=validate.Range(min=0))
     # url field is removed since it will be populated from S3
+
+class PreRegisterSchema(Schema):
+    full_name = fields.Str(required=True, validate=validate.Length(min=2))
+    phone = fields.Str(required=True, validate=validate.Length(min=9, max=10))
+    password = fields.Str(required=False, allow_none=True, missing=None, validate=validate_password_if_provided)
 
 class LoginSchema(Schema):
     phone = fields.Str(required=True, validate=validate.Regexp(
