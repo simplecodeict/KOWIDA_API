@@ -255,7 +255,7 @@ def get_all_requests():
         params = schema.load(request.args or {})
         
         # Base query for inactive users with their relationships (excluding SL001 promo code, including users without promo codes)
-        query = User.query.filter_by(is_active=False, role='user')\
+        query = User.query.filter_by(status='pending', role='user')\
             .filter(or_(User.promo_code != 'SL001', User.promo_code.is_(None)))\
             .outerjoin(BankDetails)\
             .outerjoin(Reference, User.phone == Reference.phone)
