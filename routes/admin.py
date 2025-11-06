@@ -140,9 +140,13 @@ def get_all_users():
         # Validate query parameters - empty dict if no parameters provided
         params = schema.load(request.args or {})
         
-        # Base query for users with role = 'user', (promo_code != 'SL001' OR promo_code is NULL) and their relationships
-        query = User.query.filter(User.role == 'user', or_(User.promo_code != 'SL001', User.promo_code.is_(None)))\
-            .outerjoin(BankDetails)
+        # Base query for users with role = 'user', (promo_code != 'SL001' OR promo_code is NULL), 
+        # status != 'pre-register' and their relationships
+        query = User.query.filter(
+            User.role == 'user', 
+            User.status != 'pre-register',
+            or_(User.promo_code != 'SL001', User.promo_code.is_(None))
+        ).outerjoin(BankDetails)
         
         # Apply is_active filter if provided
         if 'is_active' in params and params['is_active'] is not None:
@@ -167,6 +171,9 @@ def get_all_users():
         # Apply payment_method filter if provided
         if params.get('payment_method'):
             query = query.filter(User.payment_method == params['payment_method'])
+            
+        # Order by created_at in descending order (newest first)
+        query = query.order_by(User.created_at.desc())
             
         # Apply pagination
         page = params.get('page', 1)
@@ -307,6 +314,96 @@ def get_all_requests():
                 'users': users_data,
                 'pagination': {
                     'total_items': pagination.total,
+                    'total_pages': pagination.pages,
+                    'current_page': page,
+                    'per_page': per_page,
+                    'has_next': pagination.has_next,
+                    'has_prev': pagination.has_prev
+                }
+            }
+        }), 200
+        
+    except ValidationError as e:
+        return jsonify({
+            'status': 'error',
+            'message': 'Validation error',
+            'errors': e.messages
+        }), 400
+        
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+@admin_bp.route('/pre-register', methods=['GET'])
+@jwt_required()
+def get_pre_register_users():
+    schema = UserFilterSchema()
+    try:
+        # Validate query parameters - empty dict if no parameters provided
+        params = schema.load(request.args or {})
+        
+        # Base query for pre-register users with role = 'user', status = 'pre-register', 
+        # and (promo_code != 'SL001' OR promo_code is NULL)
+        query = User.query.filter(
+            User.role == 'user',
+            User.status == 'pre-register',
+            or_(User.promo_code != 'SL001', User.promo_code.is_(None))
+        )
+        
+        # Apply phone filter if provided
+        if params.get('phone'):
+            query = query.filter(User.phone.like(f'%{params["phone"]}%'))
+            
+        # Apply payment_method filter if provided
+        if params.get('payment_method'):
+            query = query.filter(User.payment_method == params['payment_method'])
+            
+        # Apply date range filter if provided
+        if params.get('start_date'):
+            query = query.filter(User.created_at >= datetime.combine(params['start_date'], datetime.min.time()))
+        if params.get('end_date'):
+            query = query.filter(User.created_at <= datetime.combine(params['end_date'], datetime.max.time()))
+            
+        # Order by created_at in descending order (newest first)
+        query = query.order_by(User.created_at.desc())
+            
+        # Get total count of all pre-register users (before pagination)
+        total_count = query.count()
+            
+        # Apply pagination
+        page = params.get('page', 1)
+        per_page = params.get('per_page', 10)
+        pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+        
+        # Prepare response data
+        users_data = []
+        for user in pagination.items:
+            user_data = {
+                'id': user.id,
+                'full_name': user.full_name,
+                'phone': user.phone,
+                'role': user.role,
+                'status': user.status,
+                'payment_method': user.payment_method,
+                'url': user.url,
+                'promo_code': user.promo_code,
+                'paid_amount': float(user.paid_amount),
+                'is_reference_paid': user.is_reference_paid,
+                'is_active': user.is_active,
+                'created_at': user.created_at.isoformat(),
+                'updated_at': user.updated_at.isoformat(),
+            }
+            users_data.append(user_data)
+            
+        return jsonify({
+            'status': 'success',
+            'data': {
+                'count': total_count,
+                'users': users_data,
+                'pagination': {
+                    'total_items': total_count,
                     'total_pages': pagination.pages,
                     'current_page': page,
                     'per_page': per_page,
@@ -535,14 +632,14 @@ def get_dashboard_stats():
         # Count active users (role = 'user', is_active = true, and (promo_code != 'SL001' OR promo_code is NULL))
         active_users_count = User.query.filter(
             User.role == 'user',
-            User.is_active == True,
+            User.status == 'register',
             or_(User.promo_code != 'SL001', User.promo_code.is_(None))
         ).count()
         
         # Count requests (role = 'user', is_active = false, and (promo_code != 'SL001' OR promo_code is NULL))
         requests_count = User.query.filter(
             User.role == 'user',
-            User.is_active == False,
+            User.status == 'pending',
             or_(User.promo_code != 'SL001', User.promo_code.is_(None))
         ).count()
         
@@ -562,7 +659,7 @@ def get_dashboard_stats():
         ).filter(
             and_(
                 User.role == 'user',
-                User.is_active == True,
+                User.status == 'register',
                 User.is_reference_paid == False,
                 or_(User.promo_code != 'SL001', User.promo_code.is_(None)),
                 UserAlias.c.role == 'referer'  # Reference owner must be referer, not admin
@@ -573,7 +670,7 @@ def get_dashboard_stats():
         from sqlalchemy import func
         total_income_result = db.session.query(func.sum(User.paid_amount)).filter(
             User.role == 'user',
-            User.is_active == True,
+            User.status == 'register',
             or_(User.promo_code != 'SL001', User.promo_code.is_(None))
         ).scalar()
         total_income = float(total_income_result) if total_income_result else 0.0
@@ -581,7 +678,7 @@ def get_dashboard_stats():
         # Calculate total pending amount (sum of paid_amount for inactive users with role = 'user' and (promo_code != 'SL001' OR promo_code is NULL))
         total_pending_result = db.session.query(func.sum(User.paid_amount)).filter(
             User.role == 'user',
-            User.is_active == False,
+            User.status == 'pending',
             or_(User.promo_code != 'SL001', User.promo_code.is_(None))
         ).scalar()
         total_pending_amount = float(total_pending_result) if total_pending_result else 0.0
