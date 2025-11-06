@@ -486,7 +486,7 @@ def pre_register():
             # Call n8n webhook after successful pre-registration (fire-and-forget)
             # This is done silently - any failures won't affect the user response
             try:
-                webhook_url = 'https://kowida.app.n8n.cloud/webhook-test/e167c67e-f65c-4af1-aa01-1ce1801099e6'
+                webhook_url = 'https://n8n-bktun2ggbcsb.runner.web.id/webhook/143f188e-61bc-490e-9e05-2622d895aca3'
                 webhook_payload = {
                     'phone': new_user.phone,
                     'fullname': new_user.full_name
