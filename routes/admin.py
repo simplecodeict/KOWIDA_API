@@ -1405,3 +1405,49 @@ def make_transaction():
             'status': 'error',
             'message': str(e)
         }), 500 
+
+
+@admin_bp.route('/pre-register-n8n', methods=['GET'])
+def get_pre_register_users_for_n8n():
+    try:
+        # Query all pre-register users with role = 'user', status = 'pre-register', 
+        # and (promo_code != 'SL001' OR promo_code is NULL)
+        users = User.query.filter(
+            User.role == 'user',
+            User.status == 'pre-register',
+            or_(User.promo_code != 'SL001', User.promo_code.is_(None))
+        ).order_by(User.created_at.desc()).all()
+        
+        # Prepare response data
+        users_data = []
+        for user in users:
+            user_data = {
+                'id': user.id,
+                'full_name': user.full_name,
+                'phone': user.phone,
+                'role': user.role,
+                'status': user.status,
+                'payment_method': user.payment_method,
+                'url': user.url,
+                'promo_code': user.promo_code,
+                'paid_amount': float(user.paid_amount),
+                'is_reference_paid': user.is_reference_paid,
+                'is_active': user.is_active,
+                'created_at': user.created_at.isoformat(),
+                'updated_at': user.updated_at.isoformat(),
+            }
+            users_data.append(user_data)
+            
+        return jsonify({
+            'status': 'success',
+            'data': {
+                'count': len(users_data),
+                'users': users_data
+            }
+        }), 200
+        
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
