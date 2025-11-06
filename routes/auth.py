@@ -18,6 +18,7 @@ import json
 import secrets
 import time
 import random
+import requests
 
 logger = logging.getLogger(__name__)
 
@@ -481,6 +482,29 @@ def pre_register():
             
             db.session.add(new_user)
             db.session.commit()
+            
+            # Call n8n webhook after successful pre-registration (fire-and-forget)
+            # This is done silently - any failures won't affect the user response
+            try:
+                webhook_url = 'https://kowida.app.n8n.cloud/webhook-test/e167c67e-f65c-4af1-aa01-1ce1801099e6'
+                webhook_payload = {
+                    'phone': new_user.phone,
+                    'fullname': new_user.full_name
+                }
+                response = requests.post(
+                    webhook_url,
+                    json=webhook_payload,
+                    timeout=5  # Short timeout to avoid blocking
+                )
+                # Only log success if we got a successful response (2xx status)
+                if response.status_code >= 200 and response.status_code < 300:
+                    logger.info(f"Successfully called n8n webhook for user {new_user.phone}")
+                else:
+                    logger.warning(f"n8n webhook returned status {response.status_code} for user {new_user.phone}")
+            except Exception:
+                # Silently catch all exceptions - user should never know if webhook fails
+                # Log error for debugging purposes only
+                logger.error(f"Failed to call n8n webhook for user {new_user.phone}", exc_info=True)
             
             # Generate access token
             access_token = generate_token(new_user.id)
