@@ -18,6 +18,7 @@ import json
 import secrets
 import time
 import random
+import re
 import requests
 
 logger = logging.getLogger(__name__)
@@ -67,6 +68,29 @@ def generate_token(user_id):
     except Exception as e:
         logger.error(f"Error generating token: {str(e)}", exc_info=True)
         raise
+
+
+def format_phone_for_webhook(phone: str) -> str:
+    """Format phone number to always use +94 prefix without leading zero."""
+    if not phone:
+        return phone
+
+    raw = phone.strip()
+
+    if raw.startswith('+94'):
+        digits = re.sub(r'\D', '', raw)
+        return f'+94{digits[2:]}'
+
+    digits_only = re.sub(r'\D', '', raw)
+
+    if digits_only.startswith('94'):
+        return f'+94{digits_only[2:]}'
+
+    if digits_only.startswith('0'):
+        digits_only = digits_only[1:]
+
+    return f'+94{digits_only}' if digits_only else '+94'
+
 
 @auth_bp.route('/register', methods=['POST'])
 def register():
@@ -482,14 +506,15 @@ def pre_register():
             
             db.session.add(new_user)
             db.session.commit()
+            print(format_phone_for_webhook(new_user.phone))
             
             # Call n8n webhook after successful pre-registration (fire-and-forget)
             # This is done silently - any failures won't affect the user response
             try:
                 webhook_url = 'https://n8n-bktun2ggbcsb.runner.web.id/webhook/143f188e-61bc-490e-9e05-2622d895aca3'
                 webhook_payload = {
-                    'phone': new_user.phone,
-                    'fullname': new_user.full_name
+                    'mobile': format_phone_for_webhook(new_user.phone),
+                    'name': new_user.full_name
                 }
                 response = requests.post(
                     webhook_url,
