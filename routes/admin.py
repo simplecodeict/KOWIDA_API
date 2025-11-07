@@ -40,6 +40,7 @@ def activate_user():
             
         # Update user status
         user.is_active = True
+        user.status = 'register'
         
         # If user doesn't have a promo code, automatically mark reference as paid
         if not user.promo_code:
@@ -55,6 +56,7 @@ def activate_user():
                 'id': user.id,
                 'full_name': user.full_name,
                 'phone': user.phone,
+                'status': user.status,
                 'is_active': user.is_active,
                 'is_reference_paid': user.is_reference_paid,
                 'updated_at': user.updated_at.isoformat()
