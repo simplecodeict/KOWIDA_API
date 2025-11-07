@@ -76,7 +76,7 @@ def create_app():
     bcrypt.init_app(app)
     
     # Import models
-    from models import User, BankDetails, Reference, Transaction, TransactionDetails, Offer
+    from models import User, BankDetails, Reference, Transaction, TransactionDetails, Offer, Version
     from models.base_amount import BaseAmount
     
     # Register blueprints
@@ -87,6 +87,7 @@ def create_app():
     from routes.base_amount import base_amount_bp
     from routes.sllc import sllc_bp
     from routes.offer import offer_bp
+    from routes.version import version_bp
     # from routes.ocr import ocr_bp
     
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
@@ -96,6 +97,7 @@ def create_app():
     app.register_blueprint(base_amount_bp, url_prefix='/api')
     app.register_blueprint(sllc_bp, url_prefix='/api/sllc')
     app.register_blueprint(offer_bp, url_prefix='/api')
+    app.register_blueprint(version_bp, url_prefix='/api')
     # app.register_blueprint(ocr_bp, url_prefix='/api/ocr')
     
     # JWT error handlers

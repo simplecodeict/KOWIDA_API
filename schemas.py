@@ -148,4 +148,10 @@ class OfferSchema(Schema):
     base_value = fields.Decimal(places=2, required=True, validate=validate.Range(min=0))
     discount = fields.Decimal(places=2, required=True, validate=validate.Range(min=0))
     end_date = DateOrDateTimeField(required=True)
-    is_active = fields.Boolean(required=False, load_default=True) 
+    is_active = fields.Boolean(required=False, load_default=True)
+
+class VersionCreateSchema(Schema):
+    version = fields.Str(required=True, validate=validate.Length(min=1, max=50))
+
+class VersionUpdateSchema(Schema):
+    version = fields.Str(required=True, validate=validate.Length(min=1, max=50)) 
