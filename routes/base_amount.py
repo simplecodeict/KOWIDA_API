@@ -15,8 +15,8 @@ def get_base_amount():
     try:
         logger.debug("=== Starting /base-amount endpoint ===")
         
-        # Get first base amount
-        base_amount = BaseAmount.query.first()
+        # Get base amount with id=1
+        base_amount = BaseAmount.query.filter_by(id=1).first()
         
         if not base_amount:
             return jsonify({
