@@ -24,24 +24,24 @@ def get_base_data_for_sllc():
     try:
         logger.debug("=== Starting /base-data endpoint for SLLC ===")
         
-        # Get the last base amount (most recent by id)
-        last_base_amount = BaseAmount.query.order_by(BaseAmount.id.desc()).first()
+        # Always fetch the base amount record with id = 2
+        base_amount = BaseAmount.query.get(2)
         
-        if not last_base_amount:
+        if not base_amount:
             return jsonify({
                 'status': 'error',
-                'message': 'No base amount found'
+                'message': 'Base amount with id 2 not found'
             }), 404
         
         response_data = {
             'status': 'success',
             'data': {
-                'id': last_base_amount.id,
-                'amount': float(last_base_amount.amount) if last_base_amount.amount else 0
+                'id': base_amount.id,
+                'amount': float(base_amount.amount) if base_amount.amount else 0
             }
         }
         
-        logger.debug("Successfully retrieved last base amount for SLLC")
+        logger.debug("Successfully retrieved base amount id 2 for SLLC")
         return jsonify(response_data), 200
         
     except Exception as e:
