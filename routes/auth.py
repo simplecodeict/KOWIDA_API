@@ -91,7 +91,7 @@ def format_phone_for_webhook(phone: str) -> str:
 
     return f'+94{digits_only}' if digits_only else '+94'
 
-
+# SLLC user registration
 @auth_bp.route('/register', methods=['POST'])
 def register():
     schema = UserRegistrationSchema()
@@ -205,7 +205,8 @@ def register():
                 payment_method=payment_method,
                 promo_code=data.get('promo_code'),
                 role=data.get('role'),
-                paid_amount=paid_amount
+                paid_amount=paid_amount,
+                status='register'
             )
             
             # Set is_active based on payment method
