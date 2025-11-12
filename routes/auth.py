@@ -1,6 +1,7 @@
 from flask import Blueprint, request, jsonify, current_app
 from extensions import db, bcrypt, jwt, upload_file_to_s3
 from models.user import User
+from models.user_token import UserToken
 from schemas import UserRegistrationSchema, LoginSchema, PreRegisterSchema
 from sqlalchemy.exc import IntegrityError
 from marshmallow import ValidationError
@@ -286,12 +287,174 @@ def make_payment():
         
         # Get user from database
         user = User.query.get(user_id)
+        
+        # If user not found, create a new user
         if not user:
-            return jsonify({
-                'status': 'error',
-                'message': 'User not found',
-                'error_code': 'USER_NOT_FOUND'
-            }), 404
+            # Validate required fields for new user creation
+            form_data = dict(request.form)
+            required_fields = ['full_name', 'phone', 'password']
+            missing_fields = [field for field in required_fields if not form_data.get(field)]
+            
+            if missing_fields:
+                return jsonify({
+                    'status': 'error',
+                    'message': f'Missing required fields for new user: {", ".join(missing_fields)}',
+                    'error_code': 'MISSING_REQUIRED_FIELDS'
+                }), 400
+            
+            # Check if phone already exists
+            existing_user = User.query.filter_by(phone=form_data['phone']).first()
+            if existing_user:
+                return jsonify({
+                    'status': 'error',
+                    'message': 'Phone number already registered',
+                    'error_code': 'PHONE_ALREADY_EXISTS'
+                }), 409
+            
+            # Create a copy of form data without user_id for schema validation
+            form_data_for_validation = form_data.copy()
+            form_data_for_validation.pop('user_id', None)
+            
+            # Validate request data for new user
+            try:
+                data = schema.load(form_data_for_validation)
+            except ValidationError as e:
+                return jsonify({
+                    'status': 'error',
+                    'message': 'Validation error',
+                    'errors': e.messages,
+                    'error_code': 'VALIDATION_ERROR'
+                }), 400
+            
+            # Handle file upload if present (before creating user)
+            if 'bank_slip' in request.files:
+                bank_slip = request.files['bank_slip']
+            elif 'document' in request.files:
+                bank_slip = request.files['document']
+            
+            if bank_slip:
+                # Validate file
+                if bank_slip.filename == '':
+                    return jsonify({
+                        'status': 'error',
+                        'message': 'No file selected',
+                        'error_code': 'NO_FILE_SELECTED'
+                    }), 400
+
+                # Validate file type
+                allowed_extensions = {'pdf', 'png', 'jpg', 'jpeg'}
+                file_extension = bank_slip.filename.rsplit('.', 1)[1].lower() if '.' in bank_slip.filename else ''
+                
+                if not file_extension or file_extension not in allowed_extensions:
+                    return jsonify({
+                        'status': 'error',
+                        'message': f'Invalid file type. Allowed types: {", ".join(allowed_extensions)}',
+                        'error_code': 'INVALID_FILE_TYPE'
+                    }), 400
+
+                # Validate file size (max 5MB)
+                max_size = 5 * 1024 * 1024  # 5MB in bytes
+                file_data = bank_slip.read()
+                if len(file_data) > max_size:
+                    return jsonify({
+                        'status': 'error',
+                        'message': 'File size exceeds maximum limit of 5MB',
+                        'error_code': 'FILE_TOO_LARGE'
+                    }), 400
+
+                # Upload to S3
+                try:
+                    s3_url = upload_file_to_s3(file_data, bank_slip.filename)
+                except ValueError as e:
+                    return jsonify({
+                        'status': 'error',
+                        'message': str(e),
+                        'error_code': 'S3_UPLOAD_ERROR'
+                    }), 500
+                except Exception as e:
+                    logger.error(f"Unexpected error uploading bank slip: {str(e)}")
+                    return jsonify({
+                        'status': 'error',
+                        'message': 'Failed to upload bank slip. Please try again.',
+                        'error_code': 'UPLOAD_ERROR'
+                    }), 500
+            
+            # Create new user
+            try:
+                # Determine payment method based on whether bank slip was provided
+                payment_method = 'bank_deposit' if s3_url else 'card_payment'
+                
+                # Get paid_amount from form data, default to 0
+                if data.get('paid_amount'):
+                    paid_amount = float(data.get('paid_amount', 0))
+                elif data.get('referal_coin'):
+                    paid_amount = float(data.get('referal_coin', 0))
+                else:
+                    paid_amount = 0
+                
+                # Validate paid_amount for user role
+                if data.get('role') == 'user' and paid_amount == 0:
+                    return jsonify({
+                        'status': 'error',
+                        'message': 'Paid amount cannot be 0 for users with role "user"',
+                        'error_code': 'INVALID_PAID_AMOUNT'
+                    }), 400
+                
+                user = User(
+                    full_name=data['full_name'],
+                    phone=data['phone'],
+                    password=data['password'],
+                    url=s3_url,
+                    payment_method=payment_method,
+                    promo_code=data.get('promo_code'),
+                    role=data.get('role'),
+                    paid_amount=paid_amount,
+                    status='register'
+                )
+                
+                # Set is_active based on payment method
+                user.is_active = True if payment_method == 'card_payment' else False
+                db.session.add(user)
+                db.session.commit()
+                
+                # Generate access token
+                access_token = generate_token(user.id)
+                
+                return jsonify({
+                    'status': 'success',
+                    'message': 'User created and payment information saved successfully',
+                    'data': {
+                        'user': {
+                            'id': user.id,
+                            'full_name': user.full_name,
+                            'phone': user.phone,
+                            'url': user.url,
+                            'is_active': user.is_active,
+                            'status': user.status,
+                            'payment_method': user.payment_method,
+                            'paid_amount': float(user.paid_amount),
+                            'promo_code': user.promo_code,
+                            'role': user.role,
+                            'created_at': user.created_at.isoformat() if user.created_at else None
+                        },
+                        'access_token': access_token
+                    }
+                }), 201
+                
+            except ValueError as e:
+                db.session.rollback()
+                return jsonify({
+                    'status': 'error',
+                    'message': str(e),
+                    'error_code': 'VALIDATION_ERROR'
+                }), 400
+            except IntegrityError as e:
+                db.session.rollback()
+                return jsonify({
+                    'status': 'error',
+                    'message': 'Database integrity error occurred',
+                    'error_code': 'DATABASE_ERROR'
+                }), 500
         
         # Check if bank slip or document is present in request
         if 'bank_slip' in request.files:
@@ -984,4 +1147,78 @@ def delete_account(user_id):
             'status': 'error',
             'message': 'An error occurred while deleting the account',
             'error_code': 'DELETE_ACCOUNT_ERROR'
+        }), 500
+
+@auth_bp.route('/register-token', methods=['POST'])
+def register_token():
+    """
+    Register or update Expo push token for a user
+    """
+    try:
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({
+                'status': 'error',
+                'message': 'No data provided'
+            }), 400
+        
+        user_id = data.get('user_id')
+        token = data.get('token')
+        
+        if not user_id:
+            return jsonify({
+                'status': 'error',
+                'message': 'user_id is required'
+            }), 400
+        
+        if not token:
+            return jsonify({
+                'status': 'error',
+                'message': 'token is required'
+            }), 400
+        
+        # Check if user exists
+        user = User.query.get(user_id)
+        if not user:
+            return jsonify({
+                'status': 'error',
+                'message': 'User not found'
+            }), 404
+        
+        # Check if token already exists for this user
+        user_token = UserToken.query.filter_by(user_id=user_id).first()
+        
+        if user_token:
+            # Update existing token
+            user_token.expo_push_token = token
+            message = 'Token updated successfully'
+        else:
+            # Create new token record
+            user_token = UserToken(
+                user_id=user_id,
+                expo_push_token=token
+            )
+            db.session.add(user_token)
+            message = 'Token saved successfully'
+        
+        db.session.commit()
+        
+        return jsonify({
+            'status': 'success',
+            'message': message,
+            'data': {
+                'id': user_token.id,
+                'user_id': user_token.user_id,
+                'expo_push_token': user_token.expo_push_token
+            }
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Error registering token: {str(e)}", exc_info=True)
+        db.session.rollback()
+        return jsonify({
+            'status': 'error',
+            'message': 'An error occurred while registering the token',
+            'error': str(e)
         }), 500
