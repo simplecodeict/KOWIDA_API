@@ -70,7 +70,7 @@ def create_notification():
         # Expo API supports sending multiple messages in one request (max 100 per batch)
         # Use "KOWIDA" as title, type as subtitle, body as message body
         push_title = "KOWIDA"
-        push_subtitle = notification_type or ""
+        push_subtitle = header or ""
         push_body = body or "New notification"
         
         # Prepare data payload with URL
