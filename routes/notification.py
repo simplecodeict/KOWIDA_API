@@ -12,7 +12,7 @@ notification_bp = Blueprint('notification', __name__)
 
 EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send"
 
-@notification_bp.route('/create-notification', methods=['POST'])
+@notification_bp.route('/notifications', methods=['POST'])
 def create_notification():
     """
     Create a notification and send it to all registered Expo push tokens
