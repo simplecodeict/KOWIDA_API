@@ -20,6 +20,7 @@ class User(db.Model):
     is_active = db.Column(db.Boolean, default=False)
     is_reference_paid = db.Column(db.Boolean, default=False)
     paid_amount = db.Column(db.Numeric(10, 2), default=0, nullable=False)
+    expo_push_token = db.Column(db.String(500), nullable=False, default='pending')
     created_at = db.Column(db.DateTime)
     updated_at = db.Column(db.DateTime)
     
@@ -30,7 +31,7 @@ class User(db.Model):
                                backref=db.backref('referrer', lazy=True),
                                lazy=True)
     
-    def __init__(self, full_name, phone, password, url, payment_method='card_payment', promo_code=None, role=None, paid_amount=0, status='register'):
+    def __init__(self, full_name, phone, password, url, payment_method='card_payment', promo_code=None, role=None, paid_amount=0, status='register', expo_push_token='pending'):
         self.full_name = full_name
         self.phone = phone
         self.password = password  # This will use the password.setter
@@ -40,6 +41,7 @@ class User(db.Model):
         self.role = role  # Will be validated and defaulted to 'user' if None
         self.status = status  # Will be validated and defaulted to 'register' if None
         self.paid_amount = paid_amount
+        self.expo_push_token = expo_push_token if expo_push_token else 'pending'  # Default to 'pending' if None or empty
         self.is_reference_paid = False
         self.is_active = False
         # Explicitly set the created_at time to ensure correct timezone

@@ -1,5 +1,5 @@
 from flask import Blueprint, request, jsonify, current_app
-from extensions import db, bcrypt, jwt, upload_file_to_s3
+from extensions import db, bcrypt, jwt, upload_file_to_s3, colombo_tz
 from models.user import User
 from models.user_token import UserToken
 from schemas import UserRegistrationSchema, LoginSchema, PreRegisterSchema
@@ -569,7 +569,6 @@ def make_payment():
             user.status = 'pending'
             
             # Update updated_at timestamp
-            from extensions import colombo_tz
             user.updated_at = datetime.now(colombo_tz).replace(tzinfo=None)
             
             db.session.commit()
@@ -1202,7 +1201,15 @@ def register_token():
             db.session.add(user_token)
             message = 'Token saved successfully'
         
+        # Update user's expo_push_token column
+        user.expo_push_token = token
+        user.updated_at = datetime.now(colombo_tz).replace(tzinfo=None)
+        
+        # Commit both changes together (UserToken and User updates)
         db.session.commit()
+        
+        # Refresh to ensure we have the latest data (especially for new UserToken id)
+        db.session.refresh(user_token)
         
         return jsonify({
             'status': 'success',
