@@ -49,14 +49,14 @@ def send_notification_to_admin(full_name, paid_amount):
             return
         
         # Prepare notification message
-        message = f"{full_name} has been sent request with payment {paid_amount}"
+        message = f"{full_name} has been sent request with payment {paid_amount} 🎉"
         
         # Prepare push notification payload
         notification_payload = {
             "to": admin.expo_push_token,
             "sound": "default",
             "title": "KOWIDA",
-            "subtitle": "New Request",
+            "subtitle": "",
             "body": message
         }
         
