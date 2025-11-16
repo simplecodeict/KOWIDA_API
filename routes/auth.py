@@ -1238,39 +1238,19 @@ def register_token():
                 'message': 'User not found'
             }), 404
         
-        # Check if token already exists for this user
-        user_token = UserToken.query.filter_by(user_id=user_id).first()
-        
-        if user_token:
-            # Update existing token
-            user_token.expo_push_token = token
-            message = 'Token updated successfully'
-        else:
-            # Create new token record
-            user_token = UserToken(
-                user_id=user_id,
-                expo_push_token=token
-            )
-            db.session.add(user_token)
-            message = 'Token saved successfully'
-        
         # Update user's expo_push_token column
         user.expo_push_token = token
         user.updated_at = datetime.now(colombo_tz).replace(tzinfo=None)
         
-        # Commit both changes together (UserToken and User updates)
+        # Commit changes
         db.session.commit()
-        
-        # Refresh to ensure we have the latest data (especially for new UserToken id)
-        db.session.refresh(user_token)
         
         return jsonify({
             'status': 'success',
-            'message': message,
+            'message': 'Token saved successfully',
             'data': {
-                'id': user_token.id,
-                'user_id': user_token.user_id,
-                'expo_push_token': user_token.expo_push_token
+                'user_id': user.id,
+                'expo_push_token': user.expo_push_token
             }
         }), 200
         
