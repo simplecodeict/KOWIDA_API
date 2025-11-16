@@ -296,24 +296,70 @@ def update_notification(notification_id):
 @notification_bp.route('/users-with-tokens', methods=['GET'])
 def get_users_with_tokens():
     """
-    Get all users with valid Expo push tokens (expo_push_token != 'pending' and not null)
-    Returns the list of users along with the count
+    Get users with and without valid Expo push tokens with pagination
+    Returns both lists of users along with their counts
     """
     try:
-        # Get all users with valid expo_push_token (not 'pending' and not null)
-        users = User.query.filter(
+        # Get pagination parameters
+        page = request.args.get('page', 1, type=int)
+        per_page = 10  # Fixed to 10 per page
+        
+        # Validate page number
+        if page < 1:
+            page = 1
+        
+        # Query users with valid tokens (expo_push_token != 'pending' and not null)
+        users_with_tokens_query = User.query.filter(
             User.expo_push_token != 'pending'
         ).filter(
             User.expo_push_token.isnot(None)
-        ).all()
+        )
         
-        # Count users with valid tokens
-        count = len(users)
+        # Query users without valid tokens (expo_push_token == 'pending' or null)
+        users_without_tokens_query = User.query.filter(
+            (User.expo_push_token == 'pending') | (User.expo_push_token.is_(None))
+        )
         
-        # Format users data for response
-        users_data = []
-        for user in users:
-            users_data.append({
+        # Get total counts
+        total_with_tokens = users_with_tokens_query.count()
+        total_without_tokens = users_without_tokens_query.count()
+        
+        # Apply pagination to users with tokens
+        pagination_with_tokens = users_with_tokens_query.paginate(
+            page=page,
+            per_page=per_page,
+            error_out=False
+        )
+        
+        # Apply pagination to users without tokens
+        pagination_without_tokens = users_without_tokens_query.paginate(
+            page=page,
+            per_page=per_page,
+            error_out=False
+        )
+        
+        users_with_tokens = pagination_with_tokens.items
+        users_without_tokens = pagination_without_tokens.items
+        
+        # Format users with tokens data
+        users_with_tokens_data = []
+        for user in users_with_tokens:
+            users_with_tokens_data.append({
+                'id': user.id,
+                'full_name': user.full_name,
+                'phone': user.phone,
+                'expo_push_token': user.expo_push_token,
+                'is_active': user.is_active,
+                'status': str(user.status) if user.status else None,
+                'role': str(user.role) if user.role else None,
+                'created_at': user.created_at.isoformat() if user.created_at else None,
+                'updated_at': user.updated_at.isoformat() if user.updated_at else None
+            })
+        
+        # Format users without tokens data
+        users_without_tokens_data = []
+        for user in users_without_tokens:
+            users_without_tokens_data.append({
                 'id': user.id,
                 'full_name': user.full_name,
                 'phone': user.phone,
@@ -327,10 +373,32 @@ def get_users_with_tokens():
         
         return jsonify({
             'status': 'success',
-            'message': f'Found {count} users with valid Expo push tokens',
+            'message': f'Found {total_with_tokens} users with tokens and {total_without_tokens} users without tokens',
             'data': {
-                'users': users_data,
-                'count': count
+                'users_with_tokens': {
+                    'users': users_with_tokens_data,
+                    'count': total_with_tokens,
+                    'pagination': {
+                        'page': page,
+                        'per_page': per_page,
+                        'total': total_with_tokens,
+                        'pages': pagination_with_tokens.pages,
+                        'has_next': pagination_with_tokens.has_next,
+                        'has_prev': pagination_with_tokens.has_prev
+                    }
+                },
+                'users_without_tokens': {
+                    'users': users_without_tokens_data,
+                    'count': total_without_tokens,
+                    'pagination': {
+                        'page': page,
+                        'per_page': per_page,
+                        'total': total_without_tokens,
+                        'pages': pagination_without_tokens.pages,
+                        'has_next': pagination_without_tokens.has_next,
+                        'has_prev': pagination_without_tokens.has_prev
+                    }
+                }
             }
         }), 200
         
