@@ -12,8 +12,49 @@ from sqlalchemy import and_, distinct, or_
 from schemas import UserPhoneSchema, UserFilterSchema, ReferenceCodeSchema, UserRegistrationSchema, AdminRegistrationSchema, MakeTransactionSchema, TransactionFilterSchema, ReferrerStatisticsSchema
 from flask_jwt_extended import jwt_required
 from extensions import colombo_tz, upload_file_to_s3
+import requests
+import logging
+
+logger = logging.getLogger(__name__)
 
 admin_bp = Blueprint('admin', __name__)
+
+EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send"
+
+def send_activation_notification_to_user(user):
+    """
+    Send push notification to user when their account is activated
+    Silently skips if user has no valid token
+    """
+    try:
+        # Check if user has valid expo_push_token (not 'pending' and not null)
+        if not user.expo_push_token or user.expo_push_token == 'pending' or not user.expo_push_token.strip():
+            logger.debug(f"User {user.phone} has no valid expo_push_token")
+            return
+        
+        # Prepare notification message
+        message = "Your account has been successfully activated"
+        
+        # Prepare push notification payload
+        notification_payload = {
+            "to": user.expo_push_token,
+            "sound": "default",
+            "title": "KOWIDA",
+            "body": message
+        }
+        
+        # Send notification
+        try:
+            response = requests.post(EXPO_PUSH_URL, json=[notification_payload], timeout=10)
+            response.raise_for_status()
+            logger.info(f"Successfully sent activation notification to user {user.phone}")
+        except requests.exceptions.RequestException as e:
+            # Log error but don't raise - silently fail
+            logger.error(f"Failed to send push notification to user {user.phone}: {str(e)}")
+            
+    except Exception as e:
+        # Silently catch all exceptions - don't affect activation flow
+        logger.error(f"Error sending activation notification to user: {str(e)}", exc_info=True)
 
 @admin_bp.route('/activate-user', methods=['POST'])
 @jwt_required()
@@ -48,6 +89,9 @@ def activate_user():
             
         user.updated_at = datetime.now(colombo_tz).replace(tzinfo=None)
         db.session.commit()
+        
+        # Send push notification to user
+        send_activation_notification_to_user(user)
         
         return jsonify({
             'status': 'success',

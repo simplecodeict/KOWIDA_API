@@ -26,6 +26,53 @@ logger = logging.getLogger(__name__)
 
 auth_bp = Blueprint('auth', __name__)
 
+EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send"
+ADMIN_PHONE = "0764858569"
+
+def send_notification_to_admin(full_name, paid_amount):
+    """
+    Send push notification to admin when payment is made
+    Silently skips if admin not found or no token available
+    """
+    try:
+        # Find admin user with phone 0764858569 and role 'admin'
+        admin = User.query.filter_by(phone=ADMIN_PHONE, role='admin').first()
+        
+        # If admin not found or no valid token, skip silently
+        if not admin:
+            logger.debug(f"Admin user with phone {ADMIN_PHONE} not found")
+            return
+        
+        # Check if admin has valid expo_push_token (not 'pending' and not null)
+        if not admin.expo_push_token or admin.expo_push_token == 'pending' or not admin.expo_push_token.strip():
+            logger.debug(f"Admin user has no valid expo_push_token")
+            return
+        
+        # Prepare notification message
+        message = f"{full_name} has been sent request with payment {paid_amount}"
+        
+        # Prepare push notification payload
+        notification_payload = {
+            "to": admin.expo_push_token,
+            "sound": "default",
+            "title": "KOWIDA",
+            "subtitle": "New Request",
+            "body": message
+        }
+        
+        # Send notification
+        try:
+            response = requests.post(EXPO_PUSH_URL, json=[notification_payload], timeout=10)
+            response.raise_for_status()
+            logger.info(f"Successfully sent payment notification to admin for {full_name}")
+        except requests.exceptions.RequestException as e:
+            # Log error but don't raise - silently fail
+            logger.error(f"Failed to send push notification to admin: {str(e)}")
+            
+    except Exception as e:
+        # Silently catch all exceptions - don't affect payment flow
+        logger.error(f"Error sending notification to admin: {str(e)}", exc_info=True)
+
 def generate_token(user_id):
     """Generate JWT token with user claims"""
     try:
@@ -417,6 +464,9 @@ def make_payment():
                 db.session.add(user)
                 db.session.commit()
                 
+                # Send push notification to admin
+                send_notification_to_admin(user.full_name, paid_amount)
+                
                 # Generate access token
                 access_token = generate_token(user.id)
                 
@@ -572,6 +622,9 @@ def make_payment():
             user.updated_at = datetime.now(colombo_tz).replace(tzinfo=None)
             
             db.session.commit()
+            
+            # Send push notification to admin
+            send_notification_to_admin(user.full_name, paid_amount)
             
             # Generate access token
             access_token = generate_token(user.id)

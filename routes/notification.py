@@ -54,7 +54,7 @@ def create_notification():
                 'data': {
                     'notification': {
                         'id': notification.id,
-                        'type': notification.type,
+                        'type': str(notification.type) if notification.type else None,
                         'header': notification.header,
                         'sub_header': notification.sub_header,
                         'body': notification.body,
@@ -133,7 +133,7 @@ def create_notification():
             'data': {
                 'notification': {
                     'id': notification.id,
-                    'type': notification.type,
+                    'type': str(notification.type) if notification.type else None,
                     'header': notification.header,
                     'sub_header': notification.sub_header,
                     'body': notification.body,
@@ -194,7 +194,7 @@ def get_notifications():
         for notification in notifications:
             notifications_data.append({
                 'id': notification.id,
-                'type': notification.type,
+                'type': str(notification.type) if notification.type else None,
                 'header': notification.header,
                 'sub_header': notification.sub_header,
                 'body': notification.body,
@@ -225,6 +225,120 @@ def get_notifications():
         return jsonify({
             'status': 'error',
             'message': 'An error occurred while retrieving notifications',
+            'error': str(e)
+        }), 500
+
+@notification_bp.route('/notifications/<int:notification_id>', methods=['PUT'])
+def update_notification(notification_id):
+    """
+    Update a notification by ID
+    """
+    try:
+        # Find the notification by ID
+        notification = Notification.query.get(notification_id)
+        
+        if not notification:
+            return jsonify({
+                'status': 'error',
+                'message': 'Notification not found'
+            }), 404
+        
+        # Get update data from request
+        data = request.get_json()
+        
+        # Update fields if provided
+        if 'type' in data:
+            notification.type = data['type']
+        if 'header' in data:
+            notification.header = data['header']
+        if 'sub_header' in data:
+            notification.sub_header = data['sub_header']
+        if 'body' in data:
+            notification.body = data['body']
+        if 'restriction_area' in data:
+            notification.restriction_area = data['restriction_area']
+        if 'url' in data:
+            notification.url = data['url']
+        
+        # Update the updated_at timestamp
+        notification.updated_at = datetime.now(colombo_tz).replace(tzinfo=None)
+        
+        # Save changes to database
+        db.session.commit()
+        
+        return jsonify({
+            'status': 'success',
+            'message': 'Notification updated successfully',
+            'data': {
+                'notification': {
+                    'id': notification.id,
+                    'type': str(notification.type) if notification.type else None,
+                    'header': notification.header,
+                    'sub_header': notification.sub_header,
+                    'body': notification.body,
+                    'restriction_area': notification.restriction_area,
+                    'url': notification.url,
+                    'created_at': notification.created_at.isoformat() if notification.created_at else None,
+                    'updated_at': notification.updated_at.isoformat() if notification.updated_at else None
+                }
+            }
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Error updating notification: {str(e)}", exc_info=True)
+        db.session.rollback()
+        return jsonify({
+            'status': 'error',
+            'message': 'An error occurred while updating the notification',
+            'error': str(e)
+        }), 500
+
+@notification_bp.route('/users-with-tokens', methods=['GET'])
+def get_users_with_tokens():
+    """
+    Get all users with valid Expo push tokens (expo_push_token != 'pending' and not null)
+    Returns the list of users along with the count
+    """
+    try:
+        # Get all users with valid expo_push_token (not 'pending' and not null)
+        users = User.query.filter(
+            User.expo_push_token != 'pending'
+        ).filter(
+            User.expo_push_token.isnot(None)
+        ).all()
+        
+        # Count users with valid tokens
+        count = len(users)
+        
+        # Format users data for response
+        users_data = []
+        for user in users:
+            users_data.append({
+                'id': user.id,
+                'full_name': user.full_name,
+                'phone': user.phone,
+                'expo_push_token': user.expo_push_token,
+                'is_active': user.is_active,
+                'status': str(user.status) if user.status else None,
+                'role': str(user.role) if user.role else None,
+                'created_at': user.created_at.isoformat() if user.created_at else None,
+                'updated_at': user.updated_at.isoformat() if user.updated_at else None
+            })
+        
+        return jsonify({
+            'status': 'success',
+            'message': f'Found {count} users with valid Expo push tokens',
+            'data': {
+                'users': users_data,
+                'count': count
+            }
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Error retrieving users with tokens: {str(e)}", exc_info=True)
+        return jsonify({
+            'status': 'error',
+            'message': 'An error occurred while retrieving users with tokens',
             'error': str(e)
         }), 500
 
