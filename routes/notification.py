@@ -1,7 +1,7 @@
 from flask import Blueprint, request, jsonify
 from extensions import db, colombo_tz
 from models.notification import Notification
-from models.user_token import UserToken
+from models.user import User
 from datetime import datetime
 import requests
 import logging
@@ -15,7 +15,7 @@ EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send"
 @notification_bp.route('/notifications', methods=['POST'])
 def create_notification():
     """
-    Create a notification and send it to all registered Expo push tokens
+    Create a notification and send it to all users with valid Expo push tokens
     """
     try:
         data = request.get_json()
@@ -43,14 +43,14 @@ def create_notification():
         db.session.add(notification)
         db.session.commit()
         
-        # Fetch all device tokens from user_tokens table
-        user_tokens = UserToken.query.filter(UserToken.expo_push_token.isnot(None)).all()
-        tokens = [token.expo_push_token for token in user_tokens if token.expo_push_token]
+        # Fetch all users from users table where expo_push_token != 'pending'
+        users = User.query.filter(User.expo_push_token != 'pending').filter(User.expo_push_token.isnot(None)).all()
+        tokens = [user.expo_push_token for user in users if user.expo_push_token and user.expo_push_token.strip()]
         
         if not tokens:
             return jsonify({
                 'status': 'success',
-                'message': 'Notification saved but no tokens found to send to',
+                'message': 'Notification saved but no users with valid tokens found to send to',
                 'data': {
                     'notification': {
                         'id': notification.id,
@@ -62,9 +62,10 @@ def create_notification():
                         'url': notification.url,
                         'created_at': notification.created_at.isoformat() if notification.created_at else None,
                         'updated_at': notification.updated_at.isoformat() if notification.updated_at else None
+                    },
+                    'successfully_sent_count': 0
                 }
-            }
-        }), 200
+            }), 200
         
         # Prepare notifications for Expo API
         # Expo API supports sending multiple messages in one request (max 100 per batch)
@@ -94,23 +95,41 @@ def create_notification():
             
             notifications.append(notification_payload)
         
-        # Send notifications in batches of 100
-        results = []
+        # Send notifications in batches of 100 and track successful sends
+        successfully_sent_count = 0
         batch_size = 100
         for i in range(0, len(notifications), batch_size):
             batch = notifications[i:i + batch_size]
             try:
                 response = requests.post(EXPO_PUSH_URL, json=batch, timeout=10)
                 response.raise_for_status()
-                results.append(response.json())
+                response_data = response.json()
+                
+                # Count successful sends from Expo response
+                # Expo returns a list of receipts, each with a status
+                if isinstance(response_data, dict) and 'data' in response_data:
+                    receipts = response_data.get('data', [])
+                    for receipt in receipts:
+                        # Status can be 'ok' or an error status
+                        if isinstance(receipt, dict) and receipt.get('status') == 'ok':
+                            successfully_sent_count += 1
+                elif isinstance(response_data, list):
+                    # Sometimes Expo returns a list directly
+                    for receipt in response_data:
+                        if isinstance(receipt, dict) and receipt.get('status') == 'ok':
+                            successfully_sent_count += 1
+                else:
+                    # If we can't parse the response, assume all in batch were sent
+                    # (This is a fallback - Expo usually returns detailed receipts)
+                    successfully_sent_count += len(batch)
+                
                 logger.info(f"Sent batch {i//batch_size + 1} of notifications: {len(batch)} tokens")
             except requests.exceptions.RequestException as e:
                 logger.error(f"Error sending notification batch: {str(e)}")
-                results.append({"error": str(e)})
         
         return jsonify({
             'status': 'success',
-            'message': 'Notification sent',
+            'message': f'Notification successfully sent to {successfully_sent_count} users',
             'data': {
                 'notification': {
                     'id': notification.id,
@@ -123,8 +142,8 @@ def create_notification():
                     'created_at': notification.created_at.isoformat() if notification.created_at else None,
                     'updated_at': notification.updated_at.isoformat() if notification.updated_at else None
                 },
-                'tokens_sent': len(tokens),
-                'expo_responses': results
+                'successfully_sent_count': successfully_sent_count,
+                'total_tokens': len(tokens)
             }
         }), 200
         
