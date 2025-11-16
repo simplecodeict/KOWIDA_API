@@ -43,8 +43,15 @@ def create_notification():
         db.session.add(notification)
         db.session.commit()
         
-        # Fetch all users from users table where expo_push_token != 'pending'
-        users = User.query.filter(User.expo_push_token != 'pending').filter(User.expo_push_token.isnot(None)).all()
+        # Fetch all users from users table where expo_push_token != 'pending' and role != 'admin'
+        # Exclude admin users - only send to regular users (KOWIDA app, not KOWIDA-ADMIN)
+        users = User.query.filter(
+            User.expo_push_token != 'pending'
+        ).filter(
+            User.expo_push_token.isnot(None)
+        ).filter(
+            User.role != 'admin'
+        ).all()
         tokens = [user.expo_push_token for user in users if user.expo_push_token and user.expo_push_token.strip()]
         
         if not tokens:
@@ -96,36 +103,90 @@ def create_notification():
             notifications.append(notification_payload)
         
         # Send notifications in batches of 100 and track successful sends
+        # Handle case where tokens are from different Expo projects
         successfully_sent_count = 0
         batch_size = 100
-        for i in range(0, len(notifications), batch_size):
-            batch = notifications[i:i + batch_size]
+        
+        def send_batch(batch_to_send, batch_name=""):
+            """Helper function to send a batch and count successful sends"""
+            nonlocal successfully_sent_count
             try:
-                response = requests.post(EXPO_PUSH_URL, json=batch, timeout=10)
+                response = requests.post(EXPO_PUSH_URL, json=batch_to_send, timeout=10)
                 response.raise_for_status()
                 response_data = response.json()
                 
-                # Count successful sends from Expo response
-                # Expo returns a list of receipts, each with a status
-                if isinstance(response_data, dict) and 'data' in response_data:
-                    receipts = response_data.get('data', [])
-                    for receipt in receipts:
-                        # Status can be 'ok' or an error status
-                        if isinstance(receipt, dict) and receipt.get('status') == 'ok':
-                            successfully_sent_count += 1
-                elif isinstance(response_data, list):
-                    # Sometimes Expo returns a list directly
-                    for receipt in response_data:
-                        if isinstance(receipt, dict) and receipt.get('status') == 'ok':
-                            successfully_sent_count += 1
-                else:
-                    # If we can't parse the response, assume all in batch were sent
-                    # (This is a fallback - Expo usually returns detailed receipts)
-                    successfully_sent_count += len(batch)
+                # Log the response for debugging
+                logger.info(f"Expo API response for {batch_name}: {response_data}")
                 
-                logger.info(f"Sent batch {i//batch_size + 1} of notifications: {len(batch)} tokens")
+                # Count successful sends from Expo response
+                receipts = []
+                
+                if isinstance(response_data, dict):
+                    if 'data' in response_data:
+                        receipts = response_data['data']
+                    elif 'results' in response_data:
+                        receipts = response_data['results']
+                elif isinstance(response_data, list):
+                    receipts = response_data
+                
+                # Count successful sends
+                for receipt in receipts:
+                    if isinstance(receipt, dict):
+                        status = receipt.get('status')
+                        if status == 'ok':
+                            successfully_sent_count += 1
+                        else:
+                            logger.warning(f"Notification send failed with status: {status}, receipt: {receipt}")
+                
+                # If no receipts found but response was successful, assume all were sent
+                if not receipts and response.status_code == 200:
+                    logger.warning(f"No receipts in response, assuming all {len(batch_to_send)} notifications were sent")
+                    successfully_sent_count += len(batch_to_send)
+                
+                return True
+            except requests.exceptions.HTTPError as e:
+                if e.response is not None and e.response.status_code == 400:
+                    try:
+                        error_data = e.response.json()
+                        # Check if it's the PUSH_TOO_MANY_EXPERIENCE_IDS error
+                        if 'errors' in error_data:
+                            for error in error_data['errors']:
+                                if error.get('code') == 'PUSH_TOO_MANY_EXPERIENCE_IDS':
+                                    # Parse token groups by project
+                                    details = error.get('details', {})
+                                    if details:
+                                        logger.info(f"Detected multiple projects, splitting batch by project")
+                                        # Send separate batches for each project
+                                        for project_id, project_tokens in details.items():
+                                            # Filter notifications for this project's tokens
+                                            project_batch = [
+                                                notif for notif in batch_to_send 
+                                                if notif['to'] in project_tokens
+                                            ]
+                                            if project_batch:
+                                                logger.info(f"Sending {len(project_batch)} notifications for project {project_id}")
+                                                # Send in sub-batches of 100
+                                                for j in range(0, len(project_batch), batch_size):
+                                                    sub_batch = project_batch[j:j + batch_size]
+                                                    send_batch(sub_batch, f"project {project_id} sub-batch {j//batch_size + 1}")
+                                        return True
+                    except Exception as parse_error:
+                        logger.error(f"Error parsing Expo error response: {str(parse_error)}")
+                
+                logger.error(f"HTTP error sending notification batch {batch_name}: {str(e)}")
+                if e.response is not None:
+                    logger.error(f"Response status: {e.response.status_code}")
+                    logger.error(f"Response text: {e.response.text}")
+                return False
             except requests.exceptions.RequestException as e:
-                logger.error(f"Error sending notification batch: {str(e)}")
+                logger.error(f"Error sending notification batch {batch_name}: {str(e)}")
+                return False
+        
+        # Send notifications in batches
+        for i in range(0, len(notifications), batch_size):
+            batch = notifications[i:i + batch_size]
+            send_batch(batch, f"batch {i//batch_size + 1}")
+            logger.info(f"Processed batch {i//batch_size + 1} of notifications: {len(batch)} tokens, {successfully_sent_count} successful so far")
         
         return jsonify({
             'status': 'success',
