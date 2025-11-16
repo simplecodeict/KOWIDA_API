@@ -293,6 +293,55 @@ def update_notification(notification_id):
             'error': str(e)
         }), 500
 
+@notification_bp.route('/notifications/<int:notification_id>', methods=['DELETE'])
+def delete_notification(notification_id):
+    """
+    Delete a notification by ID
+    """
+    try:
+        # Find the notification by ID
+        notification = Notification.query.get(notification_id)
+        
+        if not notification:
+            return jsonify({
+                'status': 'error',
+                'message': 'Notification not found'
+            }), 404
+        
+        # Store notification data for response before deletion
+        notification_data = {
+            'id': notification.id,
+            'type': str(notification.type) if notification.type else None,
+            'header': notification.header,
+            'sub_header': notification.sub_header,
+            'body': notification.body,
+            'restriction_area': notification.restriction_area,
+            'url': notification.url,
+            'created_at': notification.created_at.isoformat() if notification.created_at else None,
+            'updated_at': notification.updated_at.isoformat() if notification.updated_at else None
+        }
+        
+        # Delete the notification
+        db.session.delete(notification)
+        db.session.commit()
+        
+        return jsonify({
+            'status': 'success',
+            'message': 'Notification deleted successfully',
+            'data': {
+                'notification': notification_data
+            }
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Error deleting notification: {str(e)}", exc_info=True)
+        db.session.rollback()
+        return jsonify({
+            'status': 'error',
+            'message': 'An error occurred while deleting the notification',
+            'error': str(e)
+        }), 500
+
 @notification_bp.route('/users-with-tokens', methods=['GET'])
 def get_users_with_tokens():
     """
@@ -316,45 +365,23 @@ def get_users_with_tokens():
         )
         
         # Query users without valid tokens (expo_push_token == 'pending' or null)
+        # Order by created_at DESC to show newest users first
         users_without_tokens_query = User.query.filter(
             (User.expo_push_token == 'pending') | (User.expo_push_token.is_(None))
-        )
+        ).order_by(User.created_at.desc())
         
         # Get total counts
         total_with_tokens = users_with_tokens_query.count()
         total_without_tokens = users_without_tokens_query.count()
         
-        # Apply pagination to users with tokens
-        pagination_with_tokens = users_with_tokens_query.paginate(
-            page=page,
-            per_page=per_page,
-            error_out=False
-        )
-        
-        # Apply pagination to users without tokens
+        # Apply pagination to users without tokens only
         pagination_without_tokens = users_without_tokens_query.paginate(
             page=page,
             per_page=per_page,
             error_out=False
         )
         
-        users_with_tokens = pagination_with_tokens.items
         users_without_tokens = pagination_without_tokens.items
-        
-        # Format users with tokens data
-        users_with_tokens_data = []
-        for user in users_with_tokens:
-            users_with_tokens_data.append({
-                'id': user.id,
-                'full_name': user.full_name,
-                'phone': user.phone,
-                'expo_push_token': user.expo_push_token,
-                'is_active': user.is_active,
-                'status': str(user.status) if user.status else None,
-                'role': str(user.role) if user.role else None,
-                'created_at': user.created_at.isoformat() if user.created_at else None,
-                'updated_at': user.updated_at.isoformat() if user.updated_at else None
-            })
         
         # Format users without tokens data
         users_without_tokens_data = []
@@ -376,16 +403,7 @@ def get_users_with_tokens():
             'message': f'Found {total_with_tokens} users with tokens and {total_without_tokens} users without tokens',
             'data': {
                 'users_with_tokens': {
-                    'users': users_with_tokens_data,
-                    'count': total_with_tokens,
-                    'pagination': {
-                        'page': page,
-                        'per_page': per_page,
-                        'total': total_with_tokens,
-                        'pages': pagination_with_tokens.pages,
-                        'has_next': pagination_with_tokens.has_next,
-                        'has_prev': pagination_with_tokens.has_prev
-                    }
+                    'count': total_with_tokens
                 },
                 'users_without_tokens': {
                     'users': users_without_tokens_data,
