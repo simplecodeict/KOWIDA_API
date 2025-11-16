@@ -33,7 +33,7 @@ def send_activation_notification_to_user(user):
             return
         
         # Prepare notification message
-        message = "Your account has been successfully activated"
+        message = "Your account has been successfully activated 🎉"
         
         # Prepare push notification payload
         notification_payload = {
