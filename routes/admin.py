@@ -40,7 +40,10 @@ def send_activation_notification_to_user(user):
             "to": user.expo_push_token,
             "sound": "default",
             "title": "KOWIDA",
-            "body": message
+            "body": message,
+            "data": {
+                "url": "/(tabs)"
+            }
         }
         
         # Send notification
