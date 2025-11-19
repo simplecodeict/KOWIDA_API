@@ -25,6 +25,7 @@ def create_notification():
         header = data.get('header')
         sub_header = data.get('sub_header')
         body = data.get('body')
+        notification_body = data.get('notification_body')  # Optional field for push notification body only
         restriction_area = data.get('restriction_area')
         url = data.get('url')
         
@@ -79,7 +80,8 @@ def create_notification():
         # Use "KOWIDA" as title, type as subtitle, body as message body
         push_title = "KOWIDA"
         push_subtitle = sub_header or ""
-        push_body = body or "New notification"
+        # Use notification_body if provided, otherwise fall back to body
+        push_body = notification_body if notification_body is not None else (body or "New notification")
         
         # Prepare data payload with URL
         notification_data = {}
