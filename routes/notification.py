@@ -3,6 +3,7 @@ from extensions import db, colombo_tz
 from models.notification import Notification
 from models.user import User
 from datetime import datetime
+from sqlalchemy import or_
 import requests
 import logging
 
@@ -421,16 +422,22 @@ def get_users_with_tokens():
             page = 1
         
         # Query users with valid tokens (expo_push_token != 'pending' and not null)
+        # Exclude users with promo_code = 'SL001' (include NULL promo_code)
         users_with_tokens_query = User.query.filter(
             User.expo_push_token != 'pending'
         ).filter(
             User.expo_push_token.isnot(None)
+        ).filter(
+            or_(User.promo_code.is_(None), User.promo_code != 'SL001')
         )
         
         # Query users without valid tokens (expo_push_token == 'pending' or null)
-        # Order by created_at DESC to show newest users first
+        # Exclude users with promo_code = 'SL001' (include NULL promo_code)
+        # Order by created_at ASC to show oldest users first
         users_without_tokens_query = User.query.filter(
             (User.expo_push_token == 'pending') | (User.expo_push_token.is_(None))
+        ).filter(
+            or_(User.promo_code.is_(None), User.promo_code != 'SL001')
         ).order_by(User.created_at.desc())
         
         # Get total counts
