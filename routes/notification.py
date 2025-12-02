@@ -224,6 +224,221 @@ def create_notification():
             'error': str(e)
         }), 500
 
+@notification_bp.route('/pre-register-notifications', methods=['POST'])
+def create_pre_register_notification():
+    """
+    Create a notification and send it to users with status 'pre-register' only
+    The notification who_see will be set to 'pre-register'
+    """
+    try:
+        data = request.get_json()
+        
+        # Get notification data from request
+        notification_type = data.get('type')
+        header = data.get('header')
+        sub_header = data.get('sub_header')
+        body = data.get('body')
+        notification_body = data.get('notification_body')  # Optional field for push notification body only
+        restriction_area = data.get('restriction_area')
+        url = data.get('url')
+        # Force who_see to 'pre-register' for this endpoint
+        who_see = 'pre-register'
+        
+        # Save notification to database
+        current_time = datetime.now(colombo_tz).replace(tzinfo=None)
+        notification = Notification(
+            type=notification_type,
+            header=header,
+            sub_header=sub_header,
+            body=body,
+            restriction_area=restriction_area,
+            url=url,
+            who_see=who_see,
+            created_at=current_time,
+            updated_at=current_time
+        )
+        db.session.add(notification)
+        db.session.commit()
+        
+        # Fetch only pre-register users with valid tokens (expo_push_token != 'pending' and not null)
+        # Exclude admin users - only send to regular users (KOWIDA app, not KOWIDA-ADMIN)
+        users = User.query.filter(
+            User.expo_push_token != 'pending'
+        ).filter(
+            User.expo_push_token.isnot(None)
+        ).filter(
+            User.role != 'admin'
+        ).filter(
+            User.status == 'pre-register'
+        ).all()
+        tokens = [user.expo_push_token for user in users if user.expo_push_token and user.expo_push_token.strip()]
+        
+        if not tokens:
+            return jsonify({
+                'status': 'success',
+                'message': 'Notification saved but no pre-register users with valid tokens found to send to',
+                'data': {
+                    'notification': {
+                        'id': notification.id,
+                        'type': str(notification.type) if notification.type else None,
+                        'header': notification.header,
+                        'sub_header': notification.sub_header,
+                        'body': notification.body,
+                        'restriction_area': notification.restriction_area,
+                        'url': notification.url,
+                        'who_see': notification.who_see,
+                        'created_at': notification.created_at.isoformat() if notification.created_at else None,
+                        'updated_at': notification.updated_at.isoformat() if notification.updated_at else None
+                    },
+                    'successfully_sent_count': 0
+                }
+            }), 200
+        
+        # Prepare notifications for Expo API
+        # Expo API supports sending multiple messages in one request (max 100 per batch)
+        # Use "KOWIDA" as title, type as subtitle, body as message body
+        push_title = "KOWIDA"
+        push_subtitle = sub_header or ""
+        # Use notification_body if provided, otherwise fall back to body
+        push_body = notification_body if notification_body is not None else (body or "New notification")
+        
+        # Prepare data payload with URL
+        notification_data = {}
+        if url:
+            notification_data['url'] = url
+        
+        notifications = []
+        for token in tokens:
+            notification_payload = {
+                "to": token,
+                "sound": "default",
+                "title": push_title,
+                "subtitle": push_subtitle,
+                "body": push_body
+            }
+            
+            # Add data field with URL if available
+            if notification_data:
+                notification_payload["data"] = notification_data
+            
+            notifications.append(notification_payload)
+        
+        # Send notifications in batches of 100 and track successful sends
+        # Handle case where tokens are from different Expo projects
+        successfully_sent_count = 0
+        batch_size = 100
+        
+        def send_batch(batch_to_send, batch_name=""):
+            """Helper function to send a batch and count successful sends"""
+            nonlocal successfully_sent_count
+            try:
+                response = requests.post(EXPO_PUSH_URL, json=batch_to_send, timeout=10)
+                response.raise_for_status()
+                response_data = response.json()
+                
+                # Log the response for debugging
+                logger.info(f"Expo API response for {batch_name}: {response_data}")
+                
+                # Count successful sends from Expo response
+                receipts = []
+                
+                if isinstance(response_data, dict):
+                    if 'data' in response_data:
+                        receipts = response_data['data']
+                    elif 'results' in response_data:
+                        receipts = response_data['results']
+                elif isinstance(response_data, list):
+                    receipts = response_data
+                
+                # Count successful sends
+                for receipt in receipts:
+                    if isinstance(receipt, dict):
+                        status = receipt.get('status')
+                        if status == 'ok':
+                            successfully_sent_count += 1
+                        else:
+                            logger.warning(f"Notification send failed with status: {status}, receipt: {receipt}")
+                
+                # If no receipts found but response was successful, assume all were sent
+                if not receipts and response.status_code == 200:
+                    logger.warning(f"No receipts in response, assuming all {len(batch_to_send)} notifications were sent")
+                    successfully_sent_count += len(batch_to_send)
+                
+                return True
+            except requests.exceptions.HTTPError as e:
+                if e.response is not None and e.response.status_code == 400:
+                    try:
+                        error_data = e.response.json()
+                        # Check if it's the PUSH_TOO_MANY_EXPERIENCE_IDS error
+                        if 'errors' in error_data:
+                            for error in error_data['errors']:
+                                if error.get('code') == 'PUSH_TOO_MANY_EXPERIENCE_IDS':
+                                    # Parse token groups by project
+                                    details = error.get('details', {})
+                                    if details:
+                                        logger.info(f"Detected multiple projects, splitting batch by project")
+                                        # Send separate batches for each project
+                                        for project_id, project_tokens in details.items():
+                                            # Filter notifications for this project's tokens
+                                            project_batch = [
+                                                notif for notif in batch_to_send 
+                                                if notif['to'] in project_tokens
+                                            ]
+                                            if project_batch:
+                                                logger.info(f"Sending {len(project_batch)} notifications for project {project_id}")
+                                                # Send in sub-batches of 100
+                                                for j in range(0, len(project_batch), batch_size):
+                                                    sub_batch = project_batch[j:j + batch_size]
+                                                    send_batch(sub_batch, f"project {project_id} sub-batch {j//batch_size + 1}")
+                                        return True
+                    except Exception as parse_error:
+                        logger.error(f"Error parsing Expo error response: {str(parse_error)}")
+                
+                logger.error(f"HTTP error sending notification batch {batch_name}: {str(e)}")
+                if e.response is not None:
+                    logger.error(f"Response status: {e.response.status_code}")
+                    logger.error(f"Response text: {e.response.text}")
+                return False
+            except requests.exceptions.RequestException as e:
+                logger.error(f"Error sending notification batch {batch_name}: {str(e)}")
+                return False
+        
+        # Send notifications in batches
+        for i in range(0, len(notifications), batch_size):
+            batch = notifications[i:i + batch_size]
+            send_batch(batch, f"batch {i//batch_size + 1}")
+            logger.info(f"Processed batch {i//batch_size + 1} of notifications: {len(batch)} tokens, {successfully_sent_count} successful so far")
+        
+        return jsonify({
+            'status': 'success',
+            'message': f'Notification successfully sent to {successfully_sent_count} pre-register users',
+            'data': {
+                'notification': {
+                    'id': notification.id,
+                    'type': str(notification.type) if notification.type else None,
+                    'header': notification.header,
+                    'sub_header': notification.sub_header,
+                    'body': notification.body,
+                    'restriction_area': notification.restriction_area,
+                    'url': notification.url,
+                    'who_see': notification.who_see,
+                    'created_at': notification.created_at.isoformat() if notification.created_at else None,
+                    'updated_at': notification.updated_at.isoformat() if notification.updated_at else None
+                },
+                'successfully_sent_count': successfully_sent_count,
+                'total_tokens': len(tokens)
+            }
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Error creating pre-register notification: {str(e)}", exc_info=True)
+        db.session.rollback()
+        return jsonify({
+            'status': 'error',
+            'message': 'An error occurred while creating the pre-register notification',
+            'error': str(e)
+        }), 500
+
 @notification_bp.route('/notifications', methods=['GET'])
 def get_notifications():
     """
