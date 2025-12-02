@@ -12,6 +12,7 @@ class Notification(db.Model):
     body = db.Column(db.Text, nullable=True)
     restriction_area = db.Column(db.String(255), nullable=True)
     url = db.Column(db.String(500), nullable=True)
+    who_see = db.Column(db.String(255), nullable=False, default='all')
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(colombo_tz).replace(tzinfo=None))
     updated_at = db.Column(db.DateTime, default=lambda: datetime.now(colombo_tz).replace(tzinfo=None), onupdate=lambda: datetime.now(colombo_tz).replace(tzinfo=None))
 

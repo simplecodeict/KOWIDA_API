@@ -29,6 +29,7 @@ def create_notification():
         notification_body = data.get('notification_body')  # Optional field for push notification body only
         restriction_area = data.get('restriction_area')
         url = data.get('url')
+        who_see = data.get('who_see', 'all')  # Default to 'all' if not provided
         
         # Save notification to database
         current_time = datetime.now(colombo_tz).replace(tzinfo=None)
@@ -39,6 +40,7 @@ def create_notification():
             body=body,
             restriction_area=restriction_area,
             url=url,
+            who_see=who_see,
             created_at=current_time,
             updated_at=current_time
         )
@@ -69,6 +71,7 @@ def create_notification():
                         'body': notification.body,
                         'restriction_area': notification.restriction_area,
                         'url': notification.url,
+                        'who_see': notification.who_see,
                         'created_at': notification.created_at.isoformat() if notification.created_at else None,
                         'updated_at': notification.updated_at.isoformat() if notification.updated_at else None
                     },
@@ -203,6 +206,7 @@ def create_notification():
                     'body': notification.body,
                     'restriction_area': notification.restriction_area,
                     'url': notification.url,
+                    'who_see': notification.who_see,
                     'created_at': notification.created_at.isoformat() if notification.created_at else None,
                     'updated_at': notification.updated_at.isoformat() if notification.updated_at else None
                 },
@@ -264,6 +268,7 @@ def get_notifications():
                 'body': notification.body,
                 'restriction_area': notification.restriction_area,
                 'url': notification.url,
+                'who_see': notification.who_see,
                 'created_at': notification.created_at.isoformat() if notification.created_at else None,
                 'updated_at': notification.updated_at.isoformat() if notification.updated_at else None
             })
@@ -289,6 +294,84 @@ def get_notifications():
         return jsonify({
             'status': 'error',
             'message': 'An error occurred while retrieving notifications',
+            'error': str(e)
+        }), 500
+
+@notification_bp.route('/boost-knowledge', methods=['GET'])
+def get_boost_knowledge_notifications():
+    """
+    Get boost_knowledge notifications with pagination
+    Returns boost_knowledge notifications ordered by created_at DESC
+    """
+    try:
+        # Get pagination parameters
+        page = request.args.get('page', 1, type=int)
+        per_page = request.args.get('per_page', 15, type=int)
+        
+        # Validate page number
+        if page < 1:
+            page = 1
+        
+        # Validate per_page (set reasonable limits)
+        if per_page < 1:
+            per_page = 15
+        if per_page > 100:
+            per_page = 100
+        
+        # Query boost_knowledge notifications ordered by created_at DESC (newest first)
+        notifications_query = Notification.query.filter(
+            Notification.type == 'boost_knowledge'
+        ).order_by(Notification.created_at.desc())
+        
+        # Get total count for pagination info
+        total_count = notifications_query.count()
+        
+        # Apply pagination
+        pagination = notifications_query.paginate(
+            page=page,
+            per_page=per_page,
+            error_out=False
+        )
+        
+        notifications = pagination.items
+        
+        # Format notifications for response
+        notifications_data = []
+        for notification in notifications:
+            notifications_data.append({
+                'id': notification.id,
+                'type': str(notification.type) if notification.type else None,
+                'header': notification.header,
+                'sub_header': notification.sub_header,
+                'body': notification.body,
+                'restriction_area': notification.restriction_area,
+                'url': notification.url,
+                'who_see': notification.who_see,
+                'created_at': notification.created_at.isoformat() if notification.created_at else None,
+                'updated_at': notification.updated_at.isoformat() if notification.updated_at else None
+            })
+        
+        return jsonify({
+            'status': 'success',
+            'message': 'Boost knowledge notifications retrieved successfully',
+            'data': {
+                'notifications': notifications_data,
+                'pagination': {
+                    'page': page,
+                    'per_page': per_page,
+                    'total': total_count,
+                    'pages': pagination.pages,
+                    'has_next': pagination.has_next,
+                    'has_prev': pagination.has_prev
+                }
+            }
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Error retrieving boost knowledge notifications: {str(e)}", exc_info=True)
+        return jsonify({
+            'status': 'error',
+            'message': 'An error occurred while retrieving boost knowledge notifications',
             'error': str(e)
         }), 500
 
@@ -323,6 +406,8 @@ def update_notification(notification_id):
             notification.restriction_area = data['restriction_area']
         if 'url' in data:
             notification.url = data['url']
+        if 'who_see' in data:
+            notification.who_see = data['who_see']
         
         # Update the updated_at timestamp
         notification.updated_at = datetime.now(colombo_tz).replace(tzinfo=None)
@@ -342,6 +427,7 @@ def update_notification(notification_id):
                     'body': notification.body,
                     'restriction_area': notification.restriction_area,
                     'url': notification.url,
+                    'who_see': notification.who_see,
                     'created_at': notification.created_at.isoformat() if notification.created_at else None,
                     'updated_at': notification.updated_at.isoformat() if notification.updated_at else None
                 }
@@ -381,6 +467,7 @@ def delete_notification(notification_id):
             'body': notification.body,
             'restriction_area': notification.restriction_area,
             'url': notification.url,
+            'who_see': notification.who_see,
             'created_at': notification.created_at.isoformat() if notification.created_at else None,
             'updated_at': notification.updated_at.isoformat() if notification.updated_at else None
         }
