@@ -537,7 +537,7 @@ def get_boost_knowledge_notifications():
         # Query boost_knowledge notifications ordered by created_at ASC (oldest first)
         notifications_query = Notification.query.filter(
             Notification.type == 'boost_knowledge'
-        ).order_by(Notification.created_at.asc())
+        ).order_by(Notification.created_at.desc())
         
         # Get total count for pagination info
         total_count = notifications_query.count()
