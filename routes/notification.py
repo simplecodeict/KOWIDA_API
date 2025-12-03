@@ -512,11 +512,12 @@ def get_notifications():
             'error': str(e)
         }), 500
 
+# this API used to get short note
 @notification_bp.route('/boost-knowledge', methods=['GET'])
 def get_boost_knowledge_notifications():
     """
     Get boost_knowledge notifications with pagination
-    Returns boost_knowledge notifications ordered by created_at DESC
+    Returns boost_knowledge notifications ordered by created_at ASC
     """
     try:
         # Get pagination parameters
@@ -533,10 +534,10 @@ def get_boost_knowledge_notifications():
         if per_page > 100:
             per_page = 100
         
-        # Query boost_knowledge notifications ordered by created_at DESC (newest first)
+        # Query boost_knowledge notifications ordered by created_at ASC (oldest first)
         notifications_query = Notification.query.filter(
             Notification.type == 'boost_knowledge'
-        ).order_by(Notification.created_at.desc())
+        ).order_by(Notification.created_at.asc())
         
         # Get total count for pagination info
         total_count = notifications_query.count()
