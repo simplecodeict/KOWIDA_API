@@ -79,7 +79,7 @@ class User(db.Model):
         phone = re.sub(r'[^0-9]', '', phone)
         
         # Validate phone number format - supports both Sri Lankan (9-10 digits) and Korean (10-11 digits)
-        if not re.match(r'^[0-9]{10,14}$', phone):
+        if not re.match(r'^[0-9]{9,15}$', phone):
             raise ValueError("Invalid phone number format. Must be 9-11 digits (supports Sri Lankan and Korean formats)")
             
         return phone
