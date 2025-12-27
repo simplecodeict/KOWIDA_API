@@ -196,9 +196,33 @@ def create_notification():
             send_batch(batch, f"batch {i//batch_size + 1}")
             logger.info(f"Processed batch {i//batch_size + 1} of notifications: {len(batch)} tokens, {successfully_sent_count} successful so far")
         
+        # After successfully sending to non-SL001 users, send to SL001 users only if type is 'quotes' or 'boost_knowledge'
+        sllc_sent_count = 0
+        if notification_type in ['quotes', 'boost_knowledge']:
+            try:
+                # Import SLLC function to avoid circular imports
+                from routes.sllc import send_notification_to_sllc_users
+                sllc_sent_count = send_notification_to_sllc_users(
+                    header=header,
+                    sub_header=sub_header,
+                    body=body,
+                    notification_body=notification_body,
+                    url=url
+                )
+                logger.info(f"Successfully sent notification to {sllc_sent_count} SL001 users")
+            except Exception as sllc_error:
+                # Log error but don't fail the request since non-SL001 users already received it
+                logger.error(f"Error sending notification to SL001 users: {str(sllc_error)}", exc_info=True)
+        
+        # Build response message based on whether SLLC users were notified
+        if sllc_sent_count > 0:
+            message = f'Notification successfully sent to {successfully_sent_count} non-SL001 users and {sllc_sent_count} SL001 users'
+        else:
+            message = f'Notification successfully sent to {successfully_sent_count} users'
+        
         return jsonify({
             'status': 'success',
-            'message': f'Notification successfully sent to {successfully_sent_count} users',
+            'message': message,
             'data': {
                 'notification': {
                     'id': notification.id,
@@ -212,7 +236,11 @@ def create_notification():
                     'created_at': notification.created_at.isoformat() if notification.created_at else None,
                     'updated_at': notification.updated_at.isoformat() if notification.updated_at else None
                 },
-                'successfully_sent_count': successfully_sent_count,
+                'successfully_sent_count': {
+                    'non_sllc_users': successfully_sent_count,
+                    'sllc_users': sllc_sent_count,
+                    'total': successfully_sent_count + sllc_sent_count
+                },
                 'total_tokens': len(tokens)
             }
         }), 200
