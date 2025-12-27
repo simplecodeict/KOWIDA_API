@@ -55,6 +55,8 @@ def create_notification():
             User.expo_push_token.isnot(None)
         ).filter(
             User.role != 'admin'
+        ).filter(
+            User.promo_code != 'SL001'
         ).all()
         tokens = [user.expo_push_token for user in users if user.expo_push_token and user.expo_push_token.strip()]
         
