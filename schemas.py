@@ -10,7 +10,7 @@ def validate_password_if_provided(value):
 
 class UserRegistrationSchema(Schema):
     full_name = fields.Str(required=True, validate=validate.Length(min=2))
-    phone = fields.Str(required=True, validate=validate.Length(min=9, max=10))
+    phone = fields.Str(required=True, validate=validate.Length(min=9, max=15))
     password = fields.Str(required=True, validate=validate.Length(equal=4))
     promo_code = fields.Str(allow_none=True)
     role = fields.Str(allow_none=True, validate=validate.OneOf(['admin', 'user', 'referer']))
