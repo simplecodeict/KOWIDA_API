@@ -5,14 +5,16 @@ from models.bank_details import BankDetails
 from models.reference import Reference
 from models.transaction import Transaction
 from models.notification import Notification
-from schemas import UserFilterSchema, TransactionFilterSchema
-from flask_jwt_extended import jwt_required
+from schemas import UserFilterSchema, TransactionFilterSchema, PreRegisterSchema, PreRegisterSchema
+from flask_jwt_extended import jwt_required, create_access_token, decode_token
 from marshmallow import ValidationError
 from datetime import datetime
 from extensions import db, colombo_tz
 from sqlalchemy import or_, and_
 import logging
 import requests
+import secrets
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -804,4 +806,144 @@ def create_sllc_notification():
             'status': 'error',
             'message': 'An error occurred while creating the SLLC notification',
             'error': str(e)
+        }), 500
+
+@sllc_bp.route('/pre-register', methods=['POST'])
+def sllc_pre_register():
+    """
+    Pre-register a user for SLLC with promo_code = 'SL001' by default
+    Similar to /api/auth/pre-register but automatically sets promo_code to 'SL001'
+    Phone number validation is handled by frontend - accepts any phone number from payload
+    """
+    try:
+        # Get request data directly (no phone validation)
+        request_data = request.get_json()
+        if not request_data:
+            return jsonify({
+                'status': 'error',
+                'message': 'Request body is required',
+                'error_code': 'VALIDATION_ERROR'
+            }), 400
+        
+        # Validate only full_name (phone validation removed - handled by frontend)
+        full_name = request_data.get('full_name')
+        if not full_name or len(full_name.strip()) < 2:
+            return jsonify({
+                'status': 'error',
+                'message': 'Validation error',
+                'errors': {'full_name': ['Full name must be at least 2 characters']},
+                'error_code': 'VALIDATION_ERROR'
+            }), 400
+        
+        # Get phone directly from payload without validation
+        phone = request_data.get('phone')
+        if not phone:
+            return jsonify({
+                'status': 'error',
+                'message': 'Validation error',
+                'errors': {'phone': ['Phone number is required']},
+                'error_code': 'VALIDATION_ERROR'
+            }), 400
+        
+        # Get password (optional)
+        password = request_data.get('password')
+        
+        # Get expo_push_token from payload (optional, set to None if not provided)
+        expo_push_token = request_data.get('expo_push_token')
+        if not expo_push_token or expo_push_token.strip() == '':
+            expo_push_token = None
+        
+        # Prepare data dict
+        data = {
+            'full_name': full_name.strip(),
+            'phone': phone.strip(),
+            'password': password,
+            'expo_push_token': expo_push_token
+        }
+        
+        logging.info(f"Received SLLC pre-registration data: {data}")
+        
+        # Check if user already exists
+        existing_user = User.query.filter_by(phone=data['phone']).first()
+        if existing_user:
+            return jsonify({
+                'status': 'error',
+                'message': 'Phone number already registered',
+                'error_code': 'PHONE_ALREADY_EXISTS'
+            }), 409
+        
+        # Create new user with pre-registration defaults and promo_code = 'SL001'
+        try:
+            # Use a default password if not provided (can be set later during full registration)
+            password = data.get('password') or '0000'  # Default temporary password
+            
+            new_user = User(
+                full_name=data['full_name'],
+                phone=data['phone'],
+                password=password,
+                url=None,  # No receipt URL for pre-registration
+                payment_method='pending',  # Payment method is pending
+                promo_code='SL001',  # Set promo_code to SL001 by default
+                role='user',  # Default role is user
+                paid_amount=0,  # No payment yet
+                status='pre-register',  # Set status as pre-register
+                expo_push_token=data.get('expo_push_token')  # Get from payload, None if not provided
+            )
+            
+            # Set is_active to False for pre-registered users
+            new_user.is_active = False
+            
+            db.session.add(new_user)
+            db.session.commit()
+            
+            # Generate access token using auth route's generate_token function
+            from routes.auth import generate_token
+            access_token = generate_token(new_user.id)
+            
+            return jsonify({
+                'status': 'success',
+                'message': 'SLLC user pre-registered successfully',
+                'data': {
+                    'user': {
+                        'id': new_user.id,
+                        'full_name': new_user.full_name,
+                        'phone': new_user.phone,
+                        'url': new_user.url,
+                        'is_active': new_user.is_active,
+                        'payment_method': new_user.payment_method,
+                        'role': new_user.role,
+                        'status': new_user.status,
+                        'promo_code': new_user.promo_code,
+                        'paid_amount': float(new_user.paid_amount),
+                        'created_at': new_user.created_at.isoformat()
+                    },
+                    'access_token': access_token
+                }
+            }), 201
+            
+        except ValueError as e:
+            db.session.rollback()
+            return jsonify({
+                'status': 'error',
+                'message': 'Invalid input data',
+                'error': str(e),
+                'error_code': 'INVALID_INPUT'
+            }), 400
+        except Exception as e:
+            db.session.rollback()
+            logger.error(f"Error creating SLLC pre-registered user: {str(e)}", exc_info=True)
+            return jsonify({
+                'status': 'error',
+                'message': 'An error occurred while pre-registering the user',
+                'error': str(e),
+                'error_code': 'INTERNAL_ERROR'
+            }), 500
+            
+    except Exception as e:
+        logger.error(f"Error in SLLC pre-register endpoint: {str(e)}", exc_info=True)
+        return jsonify({
+            'status': 'error',
+            'message': 'An error occurred while processing the pre-registration',
+            'error': str(e),
+            'error_code': 'INTERNAL_ERROR'
         }), 500
