@@ -49,6 +49,7 @@ def create_notification():
         
         # Fetch all users from users table where expo_push_token != 'pending' and role != 'admin'
         # Exclude admin users - only send to regular users (KOWIDA app, not KOWIDA-ADMIN)
+        # Exclude only SL001 users - include users with no promo code and users with other promo codes
         users = User.query.filter(
             User.expo_push_token != 'pending'
         ).filter(
@@ -56,7 +57,7 @@ def create_notification():
         ).filter(
             User.role != 'admin'
         ).filter(
-            User.promo_code != 'SL001'
+            or_(User.promo_code.is_(None), User.promo_code != 'SL001')
         ).all()
         tokens = [user.expo_push_token for user in users if user.expo_push_token and user.expo_push_token.strip()]
         

@@ -57,7 +57,7 @@ class AdminBankDetailsSchema(Schema):
 
 class UserPhoneSchema(Schema):
     phone = fields.Str(required=True, validate=validate.Regexp(
-        r'^[0-9]{9,10}$',
+        r'^[0-9]{9,15}$',
         error='Phone number must be 9 or 10 digits'
     ))
 
