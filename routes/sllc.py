@@ -360,7 +360,7 @@ def get_sllc_dashboard_stats():
         # Count requests (role = 'user', is_active = false, and promo_code = 'SL001')
         requests_count = User.query.filter(
             User.role == 'user',
-            User.status == 'pending'
+            User.status == 'pending',
             User.is_active == False,
             User.promo_code == 'SL001'
         ).count()
