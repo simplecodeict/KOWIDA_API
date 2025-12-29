@@ -357,6 +357,7 @@ def get_sllc_dashboard_stats():
             User.promo_code == 'SL001'
         ).count()
         
+        
         # Count requests (role = 'user', is_active = false, and promo_code = 'SL001')
         requests_count = User.query.filter(
             User.role == 'user',
