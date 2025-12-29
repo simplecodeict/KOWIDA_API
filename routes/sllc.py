@@ -171,9 +171,14 @@ def get_all_sllc_requests():
         # Validate query parameters - empty dict if no parameters provided
         params = schema.load(request.args or {})
         
-        # Base query for inactive users with promo_code = 'SL001' and their relationships
-        query = User.query.filter_by(is_active=False, role='user')\
-            .filter(User.promo_code == 'SL001')\
+        # Base query for inactive users with promo_code = 'SL001' or status = 'pending'
+        query = User.query.filter(
+            User.is_active == False,
+            or_(
+                and_(User.role == 'user', User.promo_code == 'SL001'),
+                User.status == 'pending'
+            )
+        )\
             .outerjoin(BankDetails)\
             .outerjoin(Reference, User.phone == Reference.phone)
         
