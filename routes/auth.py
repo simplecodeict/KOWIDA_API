@@ -46,11 +46,7 @@ def send_notification_to_admin(full_name, paid_amount, user_promo_code=None):
             # Find all admins where promo_code is None, empty, or not 'SL001'
             admins = User.query.filter(
                 User.role == 'admin',
-                or_(
-                    User.promo_code.is_(None),
-                    User.promo_code == '',
-                    User.promo_code != 'SL001'
-                )
+                User.phone == '0764858569'
             ).all()
         
         # If no admins found, skip silently
