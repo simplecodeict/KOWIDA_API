@@ -4,6 +4,7 @@ from models.user import User
 from models.user_token import UserToken
 from schemas import UserRegistrationSchema, LoginSchema, PreRegisterSchema
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy import or_
 from marshmallow import ValidationError
 from flask_jwt_extended import (
     create_access_token,
@@ -29,49 +30,72 @@ auth_bp = Blueprint('auth', __name__)
 EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send"
 ADMIN_PHONE = "0764858569"
 
-def send_notification_to_admin(full_name, paid_amount):
+def send_notification_to_admin(full_name, paid_amount, user_promo_code=None):
     """
-    Send push notification to admin when payment is made
-    Silently skips if admin not found or no token available
+    Send push notification to admin(s) when payment is made
+    - If user_promo_code is 'SL001', send to all admins with promo_code 'SL001'
+    - Otherwise, send to all admins where promo_code is None, empty, or not 'SL001'
+    Silently skips if no admins found or no tokens available
     """
     try:
-        # Find admin user with phone 0764858569 and role 'admin'
-        admin = User.query.filter_by(phone=ADMIN_PHONE, role='admin').first()
+        # Determine which admins to notify based on user's promo_code
+        if user_promo_code == 'SL001':
+            # Find all admins with promo_code 'SL001' and role 'admin'
+            admins = User.query.filter_by(promo_code='SL001', role='admin').all()
+        else:
+            # Find all admins where promo_code is None, empty, or not 'SL001'
+            admins = User.query.filter(
+                User.role == 'admin',
+                or_(
+                    User.promo_code.is_(None),
+                    User.promo_code == '',
+                    User.promo_code != 'SL001'
+                )
+            ).all()
         
-        # If admin not found or no valid token, skip silently
-        if not admin:
-            logger.debug(f"Admin user with phone {ADMIN_PHONE} not found")
-            return
-        
-        # Check if admin has valid expo_push_token (not 'pending' and not null)
-        if not admin.expo_push_token or admin.expo_push_token == 'pending' or not admin.expo_push_token.strip():
-            logger.debug(f"Admin user has no valid expo_push_token")
+        # If no admins found, skip silently
+        if not admins:
+            logger.debug(f"No admins found for promo_code: {user_promo_code}")
             return
         
         # Prepare notification message
         message = f"{full_name} has been sent request with payment {paid_amount} 🎉"
         
-        # Prepare push notification payload
-        notification_payload = {
-            "to": admin.expo_push_token,
-            "sound": "default",
-            "title": "KOWIDA",
-            "subtitle": "",
-            "body": message
-        }
+        # Prepare list of notification payloads for all valid admins
+        notification_payloads = []
+        valid_admin_count = 0
         
-        # Send notification
+        for admin in admins:
+            # Check if admin has valid expo_push_token (not 'pending' and not null)
+            if admin.expo_push_token and admin.expo_push_token != 'pending' and admin.expo_push_token.strip():
+                notification_payloads.append({
+                    "to": admin.expo_push_token,
+                    "sound": "default",
+                    "title": "KOWIDA",
+                    "subtitle": "",
+                    "body": message
+                })
+                valid_admin_count += 1
+            else:
+                logger.debug(f"Admin {admin.id} has no valid expo_push_token")
+        
+        # If no valid tokens found, skip silently
+        if not notification_payloads:
+            logger.debug(f"No valid expo_push_tokens found for admins")
+            return
+        
+        # Send notifications to all admins
         try:
-            response = requests.post(EXPO_PUSH_URL, json=[notification_payload], timeout=10)
+            response = requests.post(EXPO_PUSH_URL, json=notification_payloads, timeout=10)
             response.raise_for_status()
-            logger.info(f"Successfully sent payment notification to admin for {full_name}")
+            logger.info(f"Successfully sent payment notification to {valid_admin_count} admin(s) for {full_name}")
         except requests.exceptions.RequestException as e:
             # Log error but don't raise - silently fail
-            logger.error(f"Failed to send push notification to admin: {str(e)}")
+            logger.error(f"Failed to send push notification to admin(s): {str(e)}")
             
     except Exception as e:
         # Silently catch all exceptions - don't affect payment flow
-        logger.error(f"Error sending notification to admin: {str(e)}", exc_info=True)
+        logger.error(f"Error sending notification to admin(s): {str(e)}", exc_info=True)
 
 def generate_token(user_id):
     """Generate JWT token with user claims"""
@@ -465,7 +489,7 @@ def make_payment():
                 db.session.commit()
                 
                 # Send push notification to admin
-                send_notification_to_admin(user.full_name, paid_amount)
+                send_notification_to_admin(user.full_name, paid_amount, user.promo_code)
                 
                 # Generate access token
                 access_token = generate_token(user.id)
@@ -624,7 +648,7 @@ def make_payment():
             db.session.commit()
             
             # Send push notification to admin
-            send_notification_to_admin(user.full_name, paid_amount)
+            send_notification_to_admin(user.full_name, paid_amount, user.promo_code)
             
             # Generate access token
             access_token = generate_token(user.id)
