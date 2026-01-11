@@ -538,11 +538,15 @@ def get_boost_knowledge_notifications():
     """
     Get boost_knowledge notifications with pagination
     Returns boost_knowledge notifications ordered by created_at ASC
+    Supports filtering by type parameter: සමාන, විරුද්ධ, or ව්‍යාකරණ
     """
     try:
         # Get pagination parameters
         page = request.args.get('page', 1, type=int)
         per_page = request.args.get('per_page', 15, type=int)
+        
+        # Get type filter parameter
+        type_filter = request.args.get('type', '').strip()
         
         # Validate page number
         if page < 1:
@@ -554,10 +558,35 @@ def get_boost_knowledge_notifications():
         if per_page > 100:
             per_page = 100
         
-        # Query boost_knowledge notifications ordered by created_at ASC (oldest first)
+        # Base query: always filter for boost_knowledge notifications
         notifications_query = Notification.query.filter(
             Notification.type == 'boost_knowledge'
-        ).order_by(Notification.created_at.asc())
+        )
+        
+        # Apply type filter if provided
+        if type_filter:
+            if type_filter == 'සමාන':
+                # Filter: header contains "සමාන"
+                notifications_query = notifications_query.filter(
+                    Notification.header.contains('සමාන')
+                )
+            elif type_filter == 'විරුද්ධ':
+                # Filter: header contains "විරුද්ධ"
+                notifications_query = notifications_query.filter(
+                    Notification.header.contains('විරුද්ධ')
+                )
+            elif type_filter == 'ව්‍යාකරණ':
+                # Filter: header does NOT contain "සමාන" AND does NOT contain "විරුද්ධ"
+                notifications_query = notifications_query.filter(
+                    ~Notification.header.contains('සමාන')
+                ).filter(
+                    ~Notification.header.contains('විරුද්ධ')
+                )
+            # If type_filter has a value but doesn't match any of the above, 
+            # it will still be applied (no additional filter), which means all boost_knowledge notifications
+        
+        # Order by created_at ASC (oldest first)
+        notifications_query = notifications_query.order_by(Notification.created_at.asc())
         
         # Get total count for pagination info
         total_count = notifications_query.count()
