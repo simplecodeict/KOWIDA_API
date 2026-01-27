@@ -76,7 +76,7 @@ def create_app():
     bcrypt.init_app(app)
     
     # Import models
-    from models import User, BankDetails, Reference, Transaction, TransactionDetails, Offer, Version, UserToken, Notification
+    from models import User, BankDetails, Reference, Transaction, TransactionDetails, Offer, Version, UserToken, Notification, SharedTransaction
     from models.base_amount import BaseAmount
     
     # Register blueprints

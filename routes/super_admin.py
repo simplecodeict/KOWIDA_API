@@ -1,6 +1,7 @@
 from flask import Blueprint, request, jsonify
 from extensions import db, upload_file_to_s3, bcrypt
 from models.user import User
+from models.shared_transaction import SharedTransaction
 from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
 from schemas import UserRegistrationSchema, LoginSchema
@@ -772,4 +773,100 @@ def login():
             'status': 'error',
             'message': 'An error occurred while processing login',
             'error_code': 'LOGIN_ERROR'
+        }), 500
+
+
+@super_admin_bp.route('/transactions', methods=['GET'])
+@jwt_required()
+def get_transactions():
+    """
+    Get shared transactions with pagination
+    Returns transactions with total amounts calculated before pagination
+    """
+    try:
+        # Helper function to get sum or 0 if None
+        def get_sum_or_zero(query_result):
+            return float(query_result) if query_result is not None else 0.0
+        
+        # Get pagination parameters
+        page = request.args.get('page', 1, type=int)
+        per_page = request.args.get('per_page', 10, type=int)
+        
+        # Validate page number
+        if page < 1:
+            page = 1
+        
+        # Validate per_page
+        if per_page < 1:
+            per_page = 10
+        if per_page > 100:
+            per_page = 100
+        
+        # Base query for all transactions
+        transactions_query = SharedTransaction.query.order_by(SharedTransaction.created_at.desc())
+        
+        # Calculate totals before pagination
+        total_amount_query = db.session.query(func.sum(SharedTransaction.full_amount)).scalar()
+        total_kowida_fund_query = db.session.query(func.sum(SharedTransaction.kowida_fund)).scalar()
+        total_randyll_fund_query = db.session.query(func.sum(SharedTransaction.randyll_fund)).scalar()
+        
+        total_amount = get_sum_or_zero(total_amount_query)
+        total_kowida_fund = get_sum_or_zero(total_kowida_fund_query)
+        total_randyll_fund = get_sum_or_zero(total_randyll_fund_query)
+        
+        # Get total count before pagination
+        total_count = transactions_query.count()
+        
+        # Apply pagination
+        pagination = transactions_query.paginate(
+            page=page,
+            per_page=per_page,
+            error_out=False
+        )
+        
+        transactions = pagination.items
+        
+        # Format transactions for response
+        transactions_data = []
+        for transaction in transactions:
+            transactions_data.append({
+                'id': transaction.id,
+                'user_count': transaction.user_count,
+                'full_amount': float(transaction.full_amount),
+                'kowida_fund': float(transaction.kowida_fund),
+                'randyll_fund': float(transaction.randyll_fund),
+                'receipt_url': transaction.receipt_url,
+                'status': transaction.status,
+                'remark': transaction.remark,
+                'created_at': transaction.created_at.isoformat() if transaction.created_at else None,
+                'updated_at': transaction.updated_at.isoformat() if transaction.updated_at else None
+            })
+        
+        return jsonify({
+            'status': 'success',
+            'message': 'Transactions retrieved successfully',
+            'data': {
+                'transactions': transactions_data,
+                'totals': {
+                    'total_amount': round(total_amount, 2),
+                    'total_kowida_fund': round(total_kowida_fund, 2),
+                    'total_randyll_fund': round(total_randyll_fund, 2)
+                },
+                'pagination': {
+                    'total': total_count,
+                    'page': page,
+                    'per_page': per_page,
+                    'pages': pagination.pages,
+                    'has_next': pagination.has_next,
+                    'has_prev': pagination.has_prev
+                }
+            }
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Error retrieving transactions: {str(e)}", exc_info=True)
+        return jsonify({
+            'status': 'error',
+            'message': 'An error occurred while retrieving transactions',
+            'error': str(e)
         }), 500

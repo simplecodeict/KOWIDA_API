@@ -10,5 +10,6 @@ from .offer import Offer
 from .version import Version
 from .user_token import UserToken
 from .notification import Notification
+from .shared_transaction import SharedTransaction
 
-__all__ = ['User', 'BankDetails', 'Reference', 'Transaction', 'TransactionDetails', 'Offer', 'Version', 'UserToken', 'Notification']
+__all__ = ['User', 'BankDetails', 'Reference', 'Transaction', 'TransactionDetails', 'Offer', 'Version', 'UserToken', 'Notification', 'SharedTransaction']
