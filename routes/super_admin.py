@@ -1,10 +1,12 @@
 from flask import Blueprint, request, jsonify
-from extensions import db, upload_file_to_s3
+from extensions import db, upload_file_to_s3, bcrypt
 from models.user import User
 from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
-from schemas import UserRegistrationSchema
+from schemas import UserRegistrationSchema, LoginSchema
 from marshmallow import ValidationError
+from flask_jwt_extended import jwt_required
+from routes.auth import generate_token
 import logging
 
 logger = logging.getLogger(__name__)
@@ -16,6 +18,7 @@ REFERENCE_COMMISSION_RATE = 0.20  # 20%
 
 
 @super_admin_bp.route('/dashboard', methods=['GET'])
+@jwt_required()
 def get_dashboard():
     """
     Get dashboard statistics for super admin
@@ -224,6 +227,7 @@ def get_dashboard():
 
 
 @super_admin_bp.route('/requests', methods=['GET'])
+@jwt_required()
 def get_requests():
     """
     Get pending user requests with pagination
@@ -301,6 +305,7 @@ def get_requests():
 
 
 @super_admin_bp.route('/users', methods=['GET'])
+@jwt_required()
 def get_users():
     """
     Get users with pagination and filters
@@ -419,6 +424,7 @@ def get_users():
 
 
 @super_admin_bp.route('/register', methods=['POST'])
+@jwt_required()
 def register():
     """
     Admin registration API
@@ -596,4 +602,174 @@ def register():
             'status': 'error',
             'message': 'An unexpected error occurred during registration',
             'error_code': 'REGISTRATION_ERROR'
+        }), 500
+
+
+@super_admin_bp.route('/pre-register', methods=['GET'])
+@jwt_required()
+def get_pre_register_users():
+    """
+    Get pre-register users with pagination and filters
+    Returns users where status='pre-register' AND role='user' 
+    AND (promo_code is null OR promo_code!='SL001')
+    
+    Filters:
+    - phone: partial match (like search)
+    """
+    try:
+        # Get pagination parameters
+        page = request.args.get('page', 1, type=int)
+        per_page = request.args.get('per_page', 10, type=int)
+        
+        # Validate page number
+        if page < 1:
+            page = 1
+        
+        # Validate per_page
+        if per_page < 1:
+            per_page = 10
+        if per_page > 100:
+            per_page = 100
+        
+        # Get filter parameters
+        phone_filter = request.args.get('phone', '').strip()
+        
+        # Base query: users where status='pre-register' AND role='user' 
+        # AND (promo_code is null OR promo_code!='SL001')
+        pre_register_query = User.query.filter(
+            User.status == 'pre-register',
+            User.role == 'user',
+            or_(User.promo_code.is_(None), User.promo_code != 'SL001')
+        )
+        
+        # Apply phone filter (partial match)
+        if phone_filter:
+            pre_register_query = pre_register_query.filter(User.phone.like(f'%{phone_filter}%'))
+        
+        # Order by created_at DESC (latest created accounts display first)
+        pre_register_query = pre_register_query.order_by(User.created_at.desc())
+        
+        # Get total count before pagination
+        total_count = pre_register_query.count()
+        
+        # Apply pagination
+        pagination = pre_register_query.paginate(
+            page=page,
+            per_page=per_page,
+            error_out=False
+        )
+        
+        users = pagination.items
+        
+        # Format users for response
+        users_data = []
+        for user in users:
+            users_data.append({
+                'id': user.id,
+                'full_name': user.full_name,
+                'phone': user.phone,
+                'url': user.url,
+                'promo_code': user.promo_code,
+                'payment_method': user.payment_method,
+                'status': str(user.status) if user.status else None,
+                'paid_amount': float(user.paid_amount),
+                'is_active': user.is_active,
+                'share_paid': user.share_paid,
+                'is_logged': user.is_logged,
+                'created_at': user.created_at.isoformat() if user.created_at else None,
+                'updated_at': user.updated_at.isoformat() if user.updated_at else None
+            })
+        
+        return jsonify({
+            'status': 'success',
+            'message': 'Pre-register users retrieved successfully',
+            'data': {
+                'users': users_data,
+                'pagination': {
+                    'total': total_count,
+                    'page': page,
+                    'per_page': per_page,
+                    'pages': pagination.pages,
+                    'has_next': pagination.has_next,
+                    'has_prev': pagination.has_prev
+                }
+            }
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Error retrieving pre-register users: {str(e)}", exc_info=True)
+        return jsonify({
+            'status': 'error',
+            'message': 'An error occurred while retrieving pre-register users',
+            'error': str(e)
+        }), 500
+
+
+@super_admin_bp.route('/login', methods=['POST'])
+def login():
+    """
+    Super admin login API
+    Validates phone and password, checks if role is 'admin'
+    Returns token on success
+    """
+    schema = LoginSchema()
+    try:
+        # Log request (excluding sensitive data)
+        logger.debug(f"Super admin login attempt from IP: {request.remote_addr}")
+        
+        # Validate request data
+        try:
+            data = schema.load(request.get_json())
+        except ValidationError as e:
+            return jsonify({
+                'status': 'error',
+                'message': 'Validation error',
+                'errors': e.messages,
+                'error_code': 'VALIDATION_ERROR'
+            }), 400
+        
+        # Find user by phone
+        user = User.query.filter_by(phone=data['phone']).first()
+        
+        # Check if user exists and password matches
+        if not user or not bcrypt.check_password_hash(user.password, data['password']):
+            return jsonify({
+                'status': 'error',
+                'message': 'Invalid phone number or password',
+                'error_code': 'INVALID_CREDENTIALS'
+            }), 401
+        
+        # Check if user has admin role
+        if user.role != 'admin':
+            return jsonify({
+                'status': 'error',
+                'message': 'Access denied. Admin privileges required.',
+                'error_code': 'ADMIN_ACCESS_REQUIRED'
+            }), 403
+        
+        # Generate access token
+        access_token = generate_token(user.id)
+        
+        # Return success response with token
+        return jsonify({
+            'status': 'success',
+            'message': 'Login successful',
+            'data': {
+                'user': {
+                    'id': user.id,
+                    'full_name': user.full_name,
+                    'phone': user.phone,
+                    'role': str(user.role),
+                    'is_active': user.is_active
+                },
+                'access_token': access_token
+            }
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Super admin login error: {str(e)}", exc_info=True)
+        return jsonify({
+            'status': 'error',
+            'message': 'An error occurred while processing login',
+            'error_code': 'LOGIN_ERROR'
         }), 500
