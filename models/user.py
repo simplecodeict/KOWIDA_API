@@ -16,7 +16,7 @@ class User(db.Model):
     payment_method = db.Column(db.String(50), nullable=False, default='card_payment')
     promo_code = db.Column(db.String(255), nullable=True, index=True)
     role = db.Column(Enum('admin', 'user', 'referer', name='user_roles'), default='user', nullable=False)
-    status = db.Column(Enum('pre-register', 'pending', 'register', name='user_status'), default='register', nullable=False)
+    status = db.Column(Enum('pre-register', 'pending', 'register', 'declined', name='user_status'), default='register', nullable=False)
     is_active = db.Column(db.Boolean, default=False)
     is_reference_paid = db.Column(db.Boolean, default=False)
     share_paid = db.Column(db.Boolean, default=False, nullable=False)
@@ -129,7 +129,7 @@ class User(db.Model):
             return 'register'  # Default to register if not provided
         
         # Validate status (allow only specified statuses)
-        allowed_statuses = ['pre-register', 'pending', 'register']
+        allowed_statuses = ['pre-register', 'pending', 'register', 'declined']
         if status.lower() not in allowed_statuses:
             raise ValueError(f"Invalid status. Allowed statuses: {', '.join(allowed_statuses)}")
             
