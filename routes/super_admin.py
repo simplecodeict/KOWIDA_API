@@ -1,5 +1,5 @@
 from flask import Blueprint, request, jsonify
-from extensions import db, upload_file_to_s3, bcrypt
+from extensions import db, upload_file_to_s3, bcrypt, colombo_tz
 from models.user import User
 from models.shared_transaction import SharedTransaction
 from sqlalchemy import func, or_
@@ -8,6 +8,7 @@ from schemas import UserRegistrationSchema, LoginSchema
 from marshmallow import ValidationError
 from flask_jwt_extended import jwt_required
 from routes.auth import generate_token
+from datetime import datetime
 import logging
 
 logger = logging.getLogger(__name__)
@@ -15,7 +16,7 @@ logger = logging.getLogger(__name__)
 super_admin_bp = Blueprint('super_admin', __name__)
 
 # Global constant for reference commission reduction rate (20%)
-REFERENCE_COMMISSION_RATE = 0.20  # 20%
+REFERENCE_COMMISSION_RATE = 0.25  # 20%
 
 
 @super_admin_bp.route('/dashboard', methods=['GET'])
@@ -301,6 +302,38 @@ def get_requests():
         return jsonify({
             'status': 'error',
             'message': 'An error occurred while retrieving requests',
+            'error': str(e)
+        }), 500
+
+
+@super_admin_bp.route('/request-count', methods=['GET'])
+@jwt_required()
+def get_pending_users():
+    """
+    Get count of pending users
+    Returns count of users where status='pending' AND (promo_code is null OR promo_code!='SL001') AND role='user'
+    """
+    try:
+        # Base query: users with status='pending' AND (promo_code is null OR promo_code!='SL001') AND role='user'
+        count = User.query.filter(
+            User.status == 'pending',
+            or_(User.promo_code.is_(None), User.promo_code != 'SL001'),
+            User.role == 'user'
+        ).count()
+        
+        return jsonify({
+            'status': 'success',
+            'message': 'Pending users count retrieved successfully',
+            'data': {
+                'count': count
+            }
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Error retrieving pending users count: {str(e)}", exc_info=True)
+        return jsonify({
+            'status': 'error',
+            'message': 'An error occurred while retrieving pending users count',
             'error': str(e)
         }), 500
 
@@ -869,4 +902,310 @@ def get_transactions():
             'status': 'error',
             'message': 'An error occurred while retrieving transactions',
             'error': str(e)
+        }), 500
+
+# This API used to get the data to make transaction form to get how need to pay
+@super_admin_bp.route('/pending-paid-stats', methods=['GET'])
+@jwt_required()
+def get_pending_paid_stats():
+    """
+    Get pending paid amounts and share paid users statistics
+    Returns pending_paid and share_paid_users data
+    """
+    try:
+        # Helper function to get sum or 0 if None
+        def get_sum_or_zero(query_result):
+            return float(query_result) if query_result is not None else 0.0
+        
+        # Helper function to get count or 0
+        def get_count_or_zero(query_result):
+            return int(query_result) if query_result is not None else 0
+        
+        # ========== PENDING PAID AMOUNTS ==========
+        
+        # direct_pending_paid: Sum of paid_amount where status='register' AND promo_code=null AND share_paid=false AND role='user'
+        direct_pending_paid_query = db.session.query(func.sum(User.paid_amount)).filter(
+            User.status == 'register',
+            User.promo_code.is_(None),
+            User.share_paid == False,
+            User.role == 'user'
+        ).scalar()
+        direct_pending_paid = get_sum_or_zero(direct_pending_paid_query)
+        
+        # reference_pending_paid: Sum of (paid_amount * 0.8) where status='register' AND promo_code!=null AND promo_code!='SL001' AND share_paid=false AND role='user'
+        reference_pending_paid_query = db.session.query(
+            func.sum(User.paid_amount * (1 - REFERENCE_COMMISSION_RATE))
+        ).filter(
+            User.status == 'register',
+            User.promo_code != 'SL001',
+            User.share_paid == False,
+            User.role == 'user'
+        ).scalar()
+        reference_pending_paid = get_sum_or_zero(reference_pending_paid_query)
+        
+        # pending_amount = direct_pending_paid + reference_pending_paid
+        pending_amount = direct_pending_paid + reference_pending_paid
+
+        kowida_pending_income = pending_amount * 0.60
+        randyll_pending_income = pending_amount * 0.40
+        
+        # ========== USER COUNTS FOR SHARE PAID =========
+        
+        # pending_users (for share_paid): Count where status='register' AND role='user' AND share_paid=false
+        pending_users_share_paid_query = User.query.filter(
+            or_(User.promo_code.is_(None), User.promo_code != 'SL001'),
+            User.status == 'register',
+            User.role == 'user',
+            User.share_paid == False
+        ).count()
+        pending_users_share_paid = get_count_or_zero(pending_users_share_paid_query)
+        
+        # Build response
+        return jsonify({
+            'status': 'success',
+            'message': 'Pending paid stats retrieved successfully',
+            'data': {
+                'pending_paid': {
+                    'pending_amount': round(pending_amount, 2),
+                    'kowida_pending_income': round(kowida_pending_income, 2),
+                    'randyll_pending_income': round(randyll_pending_income, 2)
+                },
+                'share_paid_users': {
+                    'pending_users': pending_users_share_paid
+                }
+            }
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Error retrieving pending paid stats: {str(e)}", exc_info=True)
+        return jsonify({
+            'status': 'error',
+            'message': 'An error occurred while retrieving pending paid stats',
+            'error': str(e)
+        }), 500
+
+
+@super_admin_bp.route('/make-transaction', methods=['POST'])
+@jwt_required()
+def make_transaction():
+    """
+    Create a shared transaction and update users' share_paid status
+    Saves transaction data and updates all eligible users' share_paid to True
+    Uses database transaction to ensure atomicity
+    """
+    try:
+        s3_url = None
+        receipt_file = None
+        
+        # Debug: Log all files in request
+        logger.info(f"Files in request: {list(request.files.keys())}")
+        
+        # Check if receipt file is present in request (REQUIRED - check same way as registration)
+        if 'receipt' in request.files:
+            receipt_file = request.files['receipt']
+            logger.info(f"Found receipt file with key 'receipt'")
+        elif 'receipt_url' in request.files:
+            receipt_file = request.files['receipt_url']
+            logger.info(f"Found receipt file with key 'receipt_url'")
+        elif 'document' in request.files:
+            receipt_file = request.files['document']
+            logger.info(f"Found receipt file with key 'document'")
+        
+        # Validate receipt file is required
+        if not receipt_file:
+            return jsonify({
+                'status': 'error',
+                'message': 'Receipt file is required. Please provide a receipt file (key: receipt, receipt_url, or document)',
+                'error_code': 'MISSING_RECEIPT'
+            }), 400
+        
+        # Get form data
+        user_count = request.form.get('user_count', type=int)
+        full_amount = request.form.get('full_amount', type=float)
+        kowida_fund = request.form.get('kowida_fund', type=float)
+        randyll_fund = request.form.get('randyll_fund', type=float)
+        remark = request.form.get('remark', '').strip()
+        
+        logger.info(f"Received make-transaction data: user_count={user_count}, full_amount={full_amount}, receipt_file=present")
+        
+        # Validate required fields
+        if user_count is None:
+            return jsonify({
+                'status': 'error',
+                'message': 'user_count is required',
+                'error_code': 'MISSING_USER_COUNT'
+            }), 400
+        
+        if full_amount is None:
+            return jsonify({
+                'status': 'error',
+                'message': 'full_amount is required',
+                'error_code': 'MISSING_FULL_AMOUNT'
+            }), 400
+        
+        if kowida_fund is None:
+            return jsonify({
+                'status': 'error',
+                'message': 'kowida_fund is required',
+                'error_code': 'MISSING_KOWIDA_FUND'
+            }), 400
+        
+        if randyll_fund is None:
+            return jsonify({
+                'status': 'error',
+                'message': 'randyll_fund is required',
+                'error_code': 'MISSING_RANDYLL_FUND'
+            }), 400
+        
+        # Validate numeric values
+        if user_count < 0:
+            return jsonify({
+                'status': 'error',
+                'message': 'user_count must be a positive number',
+                'error_code': 'INVALID_USER_COUNT'
+            }), 400
+        
+        if full_amount < 0 or kowida_fund < 0 or randyll_fund < 0:
+            return jsonify({
+                'status': 'error',
+                'message': 'Amount values must be positive numbers',
+                'error_code': 'INVALID_AMOUNT'
+            }), 400
+        
+        # Validate and upload receipt file (REQUIRED - same pattern as registration)
+        logger.info(f"Receipt file detected: filename={receipt_file.filename}")
+        
+        # Validate file
+        if receipt_file.filename == '':
+            return jsonify({
+                'status': 'error',
+                'message': 'No file selected',
+                'error_code': 'NO_FILE_SELECTED'
+            }), 400
+
+        # Validate file type
+        allowed_extensions = {'pdf', 'png', 'jpg', 'jpeg'}
+        file_extension = receipt_file.filename.rsplit('.', 1)[1].lower() if '.' in receipt_file.filename else ''
+        
+        if not file_extension or file_extension not in allowed_extensions:
+            return jsonify({
+                'status': 'error',
+                'message': f'Invalid file type. Allowed types: {", ".join(allowed_extensions)}',
+                'error_code': 'INVALID_FILE_TYPE'
+            }), 400
+
+        # Validate file size (max 5MB)
+        max_size = 5 * 1024 * 1024  # 5MB in bytes
+        file_data = receipt_file.read()
+        file_size = len(file_data)
+        logger.info(f"Receipt file size: {file_size} bytes")
+        
+        if file_size > max_size:
+            return jsonify({
+                'status': 'error',
+                'message': 'File size exceeds maximum limit of 5MB',
+                'error_code': 'FILE_TOO_LARGE'
+            }), 400
+
+        # Upload to S3 (only after all validations pass)
+        try:
+            logger.info(f"Uploading receipt to S3: {receipt_file.filename}")
+            s3_url = upload_file_to_s3(file_data, receipt_file.filename)
+            logger.info(f"Receipt uploaded successfully to S3: {s3_url}")
+        except ValueError as e:
+            logger.error(f"S3 upload ValueError: {str(e)}")
+            return jsonify({
+                'status': 'error',
+                'message': str(e),
+                'error_code': 'S3_UPLOAD_ERROR'
+            }), 500
+        except Exception as e:
+            logger.error(f"Unexpected error uploading receipt: {str(e)}", exc_info=True)
+            return jsonify({
+                'status': 'error',
+                'message': 'Failed to upload receipt. Please try again.',
+                'error_code': 'UPLOAD_ERROR'
+            }), 500
+        
+        # Log s3_url before creating transaction
+        logger.info(f"S3 URL before creating transaction: {s3_url}")
+        
+        # Start database transaction
+        try:
+            # Step 1: Create and save shared transaction
+            shared_transaction = SharedTransaction(
+                user_count=user_count,
+                full_amount=full_amount,
+                kowida_fund=kowida_fund,
+                randyll_fund=randyll_fund,
+                receipt_url=s3_url,
+                status=True,  # Set to True as specified
+                remark=remark if remark else None
+            )
+            
+            logger.info(f"Created SharedTransaction object with receipt_url: {shared_transaction.receipt_url}")
+            
+            db.session.add(shared_transaction)
+            db.session.flush()  # Get the transaction ID without committing
+            
+            # Step 2: Get eligible users and update their share_paid status
+            # Users where status='register' (active), (promo_code is null OR promo_code!='SL001'), role='user'
+            eligible_users = User.query.filter(
+                User.status == 'register',
+                User.role == 'user',
+                or_(User.promo_code.is_(None), User.promo_code != 'SL001')
+            ).all()
+            
+            # Update share_paid to True for all eligible users
+            updated_count = 0
+            current_time = datetime.now(colombo_tz).replace(tzinfo=None)
+            for user in eligible_users:
+                user.share_paid = True
+                user.updated_at = current_time
+                updated_count += 1
+            
+            # Commit all changes (both shared_transaction and user updates)
+            db.session.commit()
+            
+            logger.info(f"Shared transaction created: ID={shared_transaction.id}, Updated {updated_count} users")
+            
+            return jsonify({
+                'status': 'success',
+                'message': 'Transaction created successfully and users updated',
+                'data': {
+                    'transaction': {
+                        'id': shared_transaction.id,
+                        'user_count': shared_transaction.user_count,
+                        'full_amount': float(shared_transaction.full_amount),
+                        'kowida_fund': float(shared_transaction.kowida_fund),
+                        'randyll_fund': float(shared_transaction.randyll_fund),
+                        'receipt_url': shared_transaction.receipt_url,
+                        'status': shared_transaction.status,
+                        'remark': shared_transaction.remark,
+                        'created_at': shared_transaction.created_at.isoformat() if shared_transaction.created_at else None,
+                        'updated_at': shared_transaction.updated_at.isoformat() if shared_transaction.updated_at else None
+                    },
+                    'users_updated': updated_count
+                }
+            }), 201
+            
+        except Exception as e:
+            # Rollback all changes if anything fails
+            db.session.rollback()
+            logger.error(f"Error creating transaction: {str(e)}", exc_info=True)
+            return jsonify({
+                'status': 'error',
+                'message': 'Error creating transaction. All changes have been rolled back.',
+                'error': str(e),
+                'error_code': 'TRANSACTION_ERROR'
+            }), 500
+            
+    except Exception as e:
+        logger.error(f"Unexpected error in make-transaction: {str(e)}", exc_info=True)
+        db.session.rollback()
+        return jsonify({
+            'status': 'error',
+            'message': 'An unexpected error occurred while creating transaction',
+            'error': str(e),
+            'error_code': 'UNEXPECTED_ERROR'
         }), 500
