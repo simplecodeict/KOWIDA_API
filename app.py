@@ -89,6 +89,7 @@ def create_app():
     from routes.offer import offer_bp
     from routes.version import version_bp
     from routes.notification import notification_bp
+    from routes.super_admin import super_admin_bp
     # from routes.ocr import ocr_bp
     
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
@@ -100,6 +101,7 @@ def create_app():
     app.register_blueprint(offer_bp, url_prefix='/api')
     app.register_blueprint(version_bp, url_prefix='/api')
     app.register_blueprint(notification_bp, url_prefix='/api')
+    app.register_blueprint(super_admin_bp, url_prefix='/api/super-admin')
     # app.register_blueprint(ocr_bp, url_prefix='/api/ocr')
     
     # JWT error handlers
