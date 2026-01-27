@@ -846,6 +846,27 @@ def login():
                 'message': 'Account is not activated',
                 'error_code': 'ACCOUNT_INACTIVE'
             }), 403
+        
+        # Check if user is already logged in
+        if user.is_logged:
+            return jsonify({
+                'status': 'error',
+                'message': 'User already has been logged in this account',
+                'error_code': 'USER_ALREADY_LOGGED_IN'
+            }), 403
+        
+        # Set is_logged to True and update database
+        user.is_logged = True
+        try:
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            logger.error(f"Error updating is_logged status: {str(e)}", exc_info=True)
+            return jsonify({
+                'status': 'error',
+                'message': 'An error occurred while processing login',
+                'error_code': 'LOGIN_ERROR'
+            }), 500
             
         # Generate access token
         access_token = generate_token(user.id)
@@ -891,6 +912,79 @@ def login():
             'status': 'error',
             'message': 'An error occurred while processing login',
             'error_code': 'LOGIN_ERROR'
+        }), 500
+
+@auth_bp.route('/logout', methods=['POST'])
+def logout():
+    """
+    Logout API
+    Sets is_logged to False for the user
+    Requires user_id as parameter
+    """
+    try:
+        # Get user ID from request (check JSON body first, then query parameters)
+        if request.is_json and request.get_json():
+            user_id = request.get_json().get('user_id') or request.get_json().get('id')
+        else:
+            user_id = request.form.get('user_id') or request.form.get('id')
+        
+        # Also check query parameters
+        if not user_id:
+            user_id = request.args.get('user_id') or request.args.get('id')
+        
+        # Validate user_id is provided
+        if not user_id:
+            return jsonify({
+                'status': 'error',
+                'message': 'user_id is required',
+                'error_code': 'MISSING_USER_ID'
+            }), 400
+        
+        # Convert to integer if possible
+        try:
+            user_id = int(user_id)
+        except (ValueError, TypeError):
+            return jsonify({
+                'status': 'error',
+                'message': 'Invalid user_id format',
+                'error_code': 'INVALID_USER_ID'
+            }), 400
+        
+        # Find user by ID
+        user = User.query.get(user_id)
+        
+        if not user:
+            return jsonify({
+                'status': 'error',
+                'message': 'User not found',
+                'error_code': 'USER_NOT_FOUND'
+            }), 404
+        
+        # Set is_logged to False
+        user.is_logged = False
+        
+        try:
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            logger.error(f"Error updating is_logged status during logout: {str(e)}", exc_info=True)
+            return jsonify({
+                'status': 'error',
+                'message': 'An error occurred while processing logout',
+                'error_code': 'LOGOUT_ERROR'
+            }), 500
+        
+        return jsonify({
+            'status': 'success',
+            'message': 'Logout successful'
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Logout error: {str(e)}", exc_info=True)
+        return jsonify({
+            'status': 'error',
+            'message': 'An error occurred while processing logout',
+            'error_code': 'LOGOUT_ERROR'
         }), 500
 
 @auth_bp.route('/admin/login', methods=['POST'])
