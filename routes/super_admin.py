@@ -6,10 +6,11 @@ from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
 from schemas import UserRegistrationSchema, LoginSchema
 from marshmallow import ValidationError
-from flask_jwt_extended import jwt_required
+from flask_jwt_extended import jwt_required, create_access_token
 from routes.auth import generate_token
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
+import secrets
 
 logger = logging.getLogger(__name__)
 
@@ -781,8 +782,29 @@ def login():
                 'error_code': 'ADMIN_ACCESS_REQUIRED'
             }), 403
         
-        # Generate access token
-        access_token = generate_token(user.id)
+        # Generate access token with 30-day expiration
+        user_id_str = str(user.id)
+        current_time = datetime.utcnow()
+        
+        # Create additional claims with enhanced security
+        additional_claims = {
+            "user_id": user_id_str,
+            "token_type": "access",
+            "type": "access",  # For backward compatibility
+            "iat": current_time.timestamp(),  # Issued at
+            "nbf": current_time.timestamp(),  # Not valid before
+            "jti": secrets.token_urlsafe(32),  # Unique token ID
+            "scope": "access",  # Token scope
+            "fresh": False  # Token freshness
+        }
+        
+        # Generate token with 30-day expiration
+        access_token = create_access_token(
+            identity=user_id_str,
+            additional_claims=additional_claims,
+            fresh=False,
+            expires_delta=timedelta(days=30)
+        )
         
         # Return success response with token
         return jsonify({
