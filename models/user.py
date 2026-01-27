@@ -19,6 +19,8 @@ class User(db.Model):
     status = db.Column(Enum('pre-register', 'pending', 'register', name='user_status'), default='register', nullable=False)
     is_active = db.Column(db.Boolean, default=False)
     is_reference_paid = db.Column(db.Boolean, default=False)
+    share_paid = db.Column(db.Boolean, default=False, nullable=False)
+    is_logged = db.Column(db.Boolean, default=True, nullable=False)
     paid_amount = db.Column(db.Numeric(10, 2), default=0, nullable=False)
     expo_push_token = db.Column(db.String(500), nullable=False, default='pending')
     created_at = db.Column(db.DateTime)
@@ -44,6 +46,8 @@ class User(db.Model):
         self.expo_push_token = expo_push_token if expo_push_token else 'pending'  # Default to 'pending' if None or empty
         self.is_reference_paid = False
         self.is_active = False
+        self.share_paid = False  # Default to False for new users
+        self.is_logged = True  # Default to True for new users
         # Explicitly set the created_at time to ensure correct timezone
         # Store local time without timezone info to avoid UTC conversion
         self.created_at = datetime.now(colombo_tz).replace(tzinfo=None)
