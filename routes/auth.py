@@ -847,26 +847,28 @@ def login():
                 'error_code': 'ACCOUNT_INACTIVE'
             }), 403
         
-        # Check if user is already logged in
-        if user.is_logged:
-            return jsonify({
-                'status': 'error',
-                'message': 'User already has been logged in this account',
-                'error_code': 'USER_ALREADY_LOGGED_IN'
-            }), 403
-        
-        # Set is_logged to True and update database
-        user.is_logged = True
-        try:
-            db.session.commit()
-        except Exception as e:
-            db.session.rollback()
-            logger.error(f"Error updating is_logged status: {str(e)}", exc_info=True)
-            return jsonify({
-                'status': 'error',
-                'message': 'An error occurred while processing login',
-                'error_code': 'LOGIN_ERROR'
-            }), 500
+        # Check if user role is "user" - only then check is_logged
+        if user.role == 'user':
+            # Check if user is already logged in (only for role "user")
+            if user.is_logged:
+                return jsonify({
+                    'status': 'error',
+                    'message': 'User already has been logged in this account',
+                    'error_code': 'USER_ALREADY_LOGGED_IN'
+                }), 403
+            
+            # Set is_logged to True and update database (only for role "user")
+            user.is_logged = True
+            try:
+                db.session.commit()
+            except Exception as e:
+                db.session.rollback()
+                logger.error(f"Error updating is_logged status: {str(e)}", exc_info=True)
+                return jsonify({
+                    'status': 'error',
+                    'message': 'An error occurred while processing login',
+                    'error_code': 'LOGIN_ERROR'
+                }), 500
             
         # Generate access token
         access_token = generate_token(user.id)
