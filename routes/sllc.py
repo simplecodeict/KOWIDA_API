@@ -69,7 +69,7 @@ def get_all_sllc_users():
         params = schema.load(request.args or {})
         
         # Base query for users with role = 'user' and promo_code = 'SL001'
-        query = User.query.filter(User.role == 'user', User.promo_code == 'SL001', User.status == 'register')\
+        query = User.query.filter(User.role == 'user', User.promo_code == 'SL001')\
             .outerjoin(BankDetails)
         
         # Apply is_active filter if provided
@@ -358,7 +358,8 @@ def get_sllc_dashboard_stats():
         active_users_count = User.query.filter(
             User.role == 'user',
             User.is_active == True,
-            User.promo_code == 'SL001'
+            User.promo_code == 'SL001',
+            User.status == 'register'
         ).count()
         
         
@@ -399,7 +400,8 @@ def get_sllc_dashboard_stats():
         total_income_result = db.session.query(func.sum(User.paid_amount)).filter(
             User.role == 'user',
             User.is_active == True,
-            User.promo_code == 'SL001'
+            User.promo_code == 'SL001',
+            User.status == 'register'
         ).scalar()
         total_income = float(total_income_result) if total_income_result else 0.0
         
