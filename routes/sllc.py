@@ -69,7 +69,7 @@ def get_all_sllc_users():
         params = schema.load(request.args or {})
         
         # Base query for users with role = 'user' and promo_code = 'SL001'
-        query = User.query.filter(User.role == 'user', User.promo_code == 'SL001')\
+        query = User.query.filter(User.role == 'user', User.promo_code == 'SL001', User.status == 'register')\
             .outerjoin(BankDetails)
         
         # Apply is_active filter if provided
