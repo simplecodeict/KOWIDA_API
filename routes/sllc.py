@@ -15,6 +15,10 @@ import logging
 import requests
 import secrets
 import re
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 logger = logging.getLogger(__name__)
 
@@ -602,11 +606,15 @@ EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send"
 
 def send_notification_to_sllc_users(header, sub_header, body, notification_body, url):
     """
-    Send notification to SL001 users only (without saving to database)
-    Returns the count of successfully sent notifications
+    Send notification to SL001 users only (without saving to database).
+    Uses optimized concurrent batch processing for reliability.
+    Returns the count of successfully sent notifications.
     """
     try:
-        # Fetch only SL001 users with valid tokens
+        # Import the optimized notification sending function from notification module
+        from routes.notification import send_notifications_concurrently
+        
+        # Fetch only SL001 users with valid tokens efficiently
         users = User.query.filter(
             User.expo_push_token != 'pending'
         ).filter(
@@ -615,15 +623,15 @@ def send_notification_to_sllc_users(header, sub_header, body, notification_body,
             User.role != 'admin'
         ).filter(
             User.promo_code == 'SL001'
-        ).all()
+        ).with_entities(User.expo_push_token).all()
         
-        tokens = [user.expo_push_token for user in users if user.expo_push_token and user.expo_push_token.strip()]
+        tokens = [u.expo_push_token for u in users if u.expo_push_token and u.expo_push_token.strip()]
         
         if not tokens:
             logger.info("No SL001 users with valid tokens found")
             return 0
         
-        # Prepare notifications for Expo API
+        # Prepare push notification content
         push_title = "SLLC"
         push_subtitle = sub_header or ""
         push_body = notification_body if notification_body is not None else (body or "New notification")
@@ -633,105 +641,20 @@ def send_notification_to_sllc_users(header, sub_header, body, notification_body,
         if url:
             notification_data['url'] = url
         
-        notifications = []
-        for token in tokens:
-            notification_payload = {
-                "to": token,
-                "sound": "default",
-                "title": push_title,
-                "subtitle": push_subtitle,
-                "body": push_body
-            }
-            
-            # Add data field with URL if available
-            if notification_data:
-                notification_payload["data"] = notification_data
-            
-            notifications.append(notification_payload)
+        # Send notifications using optimized concurrent processing
+        logger.info(f"Starting SL001 notification send to {len(tokens)} users")
+        start_time = time.time()
         
-        # Send notifications in batches of 100
-        successfully_sent_count = 0
-        batch_size = 100
+        successfully_sent_count, failed_count = send_notifications_concurrently(
+            tokens=tokens,
+            push_title=push_title,
+            push_subtitle=push_subtitle,
+            push_body=push_body,
+            notification_data=notification_data
+        )
         
-        def send_batch(batch_to_send, batch_name=""):
-            """Helper function to send a batch and count successful sends"""
-            nonlocal successfully_sent_count
-            try:
-                response = requests.post(EXPO_PUSH_URL, json=batch_to_send, timeout=10)
-                response.raise_for_status()
-                response_data = response.json()
-                
-                logger.info(f"Expo API response for SL001 {batch_name}: {response_data}")
-                
-                # Count successful sends from Expo response
-                receipts = []
-                
-                if isinstance(response_data, dict):
-                    if 'data' in response_data:
-                        receipts = response_data['data']
-                    elif 'results' in response_data:
-                        receipts = response_data['results']
-                elif isinstance(response_data, list):
-                    receipts = response_data
-                
-                # Count successful sends
-                for receipt in receipts:
-                    if isinstance(receipt, dict):
-                        status = receipt.get('status')
-                        if status == 'ok':
-                            successfully_sent_count += 1
-                        else:
-                            logger.warning(f"SL001 notification send failed with status: {status}, receipt: {receipt}")
-                
-                # If no receipts found but response was successful, assume all were sent
-                if not receipts and response.status_code == 200:
-                    logger.warning(f"No receipts in response, assuming all {len(batch_to_send)} SL001 notifications were sent")
-                    successfully_sent_count += len(batch_to_send)
-                
-                return True
-            except requests.exceptions.HTTPError as e:
-                if e.response is not None and e.response.status_code == 400:
-                    try:
-                        error_data = e.response.json()
-                        # Check if it's the PUSH_TOO_MANY_EXPERIENCE_IDS error
-                        if 'errors' in error_data:
-                            for error in error_data['errors']:
-                                if error.get('code') == 'PUSH_TOO_MANY_EXPERIENCE_IDS':
-                                    # Parse token groups by project
-                                    details = error.get('details', {})
-                                    if details:
-                                        logger.info(f"Detected multiple projects for SL001, splitting batch by project")
-                                        # Send separate batches for each project
-                                        for project_id, project_tokens in details.items():
-                                            # Filter notifications for this project's tokens
-                                            project_batch = [
-                                                notif for notif in batch_to_send 
-                                                if notif['to'] in project_tokens
-                                            ]
-                                            if project_batch:
-                                                logger.info(f"Sending {len(project_batch)} SL001 notifications for project {project_id}")
-                                                # Send in sub-batches of 100
-                                                for j in range(0, len(project_batch), batch_size):
-                                                    sub_batch = project_batch[j:j + batch_size]
-                                                    send_batch(sub_batch, f"project {project_id} sub-batch {j//batch_size + 1}")
-                                        return True
-                    except Exception as parse_error:
-                        logger.error(f"Error parsing Expo error response for SL001: {str(parse_error)}")
-                
-                logger.error(f"HTTP error sending SL001 notification batch {batch_name}: {str(e)}")
-                if e.response is not None:
-                    logger.error(f"Response status: {e.response.status_code}")
-                    logger.error(f"Response text: {e.response.text}")
-                return False
-            except requests.exceptions.RequestException as e:
-                logger.error(f"Error sending SL001 notification batch {batch_name}: {str(e)}")
-                return False
-        
-        # Send notifications in batches
-        for i in range(0, len(notifications), batch_size):
-            batch = notifications[i:i + batch_size]
-            send_batch(batch, f"SL001 batch {i//batch_size + 1}")
-            logger.info(f"Processed SL001 batch {i//batch_size + 1} of notifications: {len(batch)} tokens, {successfully_sent_count} successful so far")
+        elapsed_time = time.time() - start_time
+        logger.info(f"SL001 notification sending completed in {elapsed_time:.2f}s: {successfully_sent_count} success, {failed_count} failed")
         
         return successfully_sent_count
         
