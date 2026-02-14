@@ -68,11 +68,11 @@ def get_dashboard():
         # 4. total_income = direct_income + referenced_income
         total_income = direct_income + referenced_income
         
-        # 5. kowida_income = total_income * 60%
-        kowida_income = total_income * 0.60
+        # 5. kowida_income = total_income * 55%
+        kowida_income = total_income * 0.55
         
-        # 6. randyll_income = total_income * 40%
-        randyll_income = total_income * 0.40
+        # 6. randyll_income = total_income * 45%
+        randyll_income = total_income * 0.45
         
         # ========== USER COUNTS ==========
         
@@ -129,8 +129,8 @@ def get_dashboard():
         # 13. paid_amount = direct_paid + reference_paid
         paid_amount = direct_paid + reference_paid
 
-        kowida_paid_income = paid_amount * 0.60
-        randyll_paid_income = paid_amount * 0.40
+        kowida_paid_income = paid_amount * 0.55
+        randyll_paid_income = paid_amount * 0.45
         
         # ========== PENDING PAID AMOUNTS ==========
         
@@ -158,8 +158,8 @@ def get_dashboard():
         # 16. pending_amount = direct_pending_paid + reference_pending_paid
         pending_amount = direct_pending_paid + reference_pending_paid
 
-        kowida_pending_income = pending_amount * 0.60
-        randyll_pending_income = pending_amount * 0.40
+        kowida_pending_income = pending_amount * 0.55
+        randyll_pending_income = pending_amount * 0.45
         
         # ========== USER COUNTS FOR SHARE PAID ==========
         
@@ -968,8 +968,8 @@ def get_pending_paid_stats():
         # pending_amount = direct_pending_paid + reference_pending_paid
         pending_amount = direct_pending_paid + reference_pending_paid
 
-        kowida_pending_income = pending_amount * 0.60
-        randyll_pending_income = pending_amount * 0.40
+        kowida_pending_income = pending_amount * 0.55
+        randyll_pending_income = pending_amount * 0.45
         
         # ========== USER COUNTS FOR SHARE PAID =========
         
