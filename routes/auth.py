@@ -746,26 +746,26 @@ def pre_register():
             
             # Call n8n webhook after successful pre-registration (fire-and-forget)
             # This is done silently - any failures won't affect the user response
-            try:
-                webhook_url = 'https://n8n-bktun2ggbcsb.runner.web.id/webhook/143f188e-61bc-490e-9e05-2622d895aca3'
-                webhook_payload = {
-                    'mobile': format_phone_for_webhook(new_user.phone),
-                    'name': new_user.full_name
-                }
-                response = requests.post(
-                    webhook_url,
-                    json=webhook_payload,
-                    timeout=5  # Short timeout to avoid blocking
-                )
-                # Only log success if we got a successful response (2xx status)
-                if response.status_code >= 200 and response.status_code < 300:
-                    logger.info(f"Successfully called n8n webhook for user {new_user.phone}")
-                else:
-                    logger.warning(f"n8n webhook returned status {response.status_code} for user {new_user.phone}")
-            except Exception:
-                # Silently catch all exceptions - user should never know if webhook fails
-                # Log error for debugging purposes only
-                logger.error(f"Failed to call n8n webhook for user {new_user.phone}", exc_info=True)
+            # try:
+            #     webhook_url = 'https://n8n-bktun2ggbcsb.runner.web.id/webhook/143f188e-61bc-490e-9e05-2622d895aca3'
+            #     webhook_payload = {
+            #         'mobile': format_phone_for_webhook(new_user.phone),
+            #         'name': new_user.full_name
+            #     }
+            #     response = requests.post(
+            #         webhook_url,
+            #         json=webhook_payload,
+            #         timeout=5  # Short timeout to avoid blocking
+            #     )
+            #     # Only log success if we got a successful response (2xx status)
+            #     if response.status_code >= 200 and response.status_code < 300:
+            #         logger.info(f"Successfully called n8n webhook for user {new_user.phone}")
+            #     else:
+            #         logger.warning(f"n8n webhook returned status {response.status_code} for user {new_user.phone}")
+            # except Exception:
+            #     # Silently catch all exceptions - user should never know if webhook fails
+            #     # Log error for debugging purposes only
+            #     logger.error(f"Failed to call n8n webhook for user {new_user.phone}", exc_info=True)
             
             # Generate access token
             access_token = generate_token(new_user.id)
