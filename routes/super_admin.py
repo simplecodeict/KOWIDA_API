@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 super_admin_bp = Blueprint('super_admin', __name__)
 
 # Global constant for reference commission reduction rate (20%)
-REFERENCE_COMMISSION_RATE = 0.25  # 20%
+REFERENCE_COMMISSION_RATE = 0.40  # 20%
 
 
 @super_admin_bp.route('/dashboard', methods=['GET'])
