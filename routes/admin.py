@@ -913,6 +913,8 @@ def get_all_transactions():
         # Apply user_id filter if provided
         if params.get('user_id'):
             query = query.filter(Transaction.user_id == params['user_id'])
+
+        query = query.order_by(Transaction.created_at.desc())
             
         # Apply pagination
         page = params.get('page', 1)
