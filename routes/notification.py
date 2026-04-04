@@ -538,7 +538,14 @@ def get_notifications():
             page = 1
         
         # Query notifications ordered by created_at DESC (newest first)
-        notifications_query = Notification.query.order_by(Notification.created_at.desc())
+        notifications_query = Notification.query.filter(
+            or_(
+                Notification.type == 'boost_knowledge',
+                Notification.type == 'quotes',
+                and_(Notification.type == 'announcement', Notification.who_see != 'SL001'),
+                and_(Notification.type == 'news', Notification.who_see != 'SL001')
+            )
+        ).order_by(Notification.created_at.desc())
         
         # Get total count for pagination info
         total_count = notifications_query.count()
