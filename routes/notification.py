@@ -3,7 +3,7 @@ from extensions import db, colombo_tz
 from models.notification import Notification
 from models.user import User
 from datetime import datetime
-from sqlalchemy import or_
+from sqlalchemy import or_, and_
 import requests
 import logging
 import threading
@@ -542,8 +542,8 @@ def get_notifications():
             or_(
                 Notification.type == 'boost_knowledge',
                 Notification.type == 'quotes',
-                and_(Notification.type == 'announcement', Notification.who_see != 'SL001'),
-                and_(Notification.type == 'news', Notification.who_see != 'SL001')
+                and_(Notification.type == 'announcement', Notification.who_see == 'SL001'),
+                and_(Notification.type == 'news', Notification.who_see == 'SL001')
             )
         ).order_by(Notification.created_at.desc())
         
