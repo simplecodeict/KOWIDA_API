@@ -165,3 +165,13 @@ class ClassRecordingCreateSchema(Schema):
     type = fields.Str(required=True, validate=validate.OneOf(['topik', 'spoken', 'eps-topik']))
     is_expired = fields.Boolean(required=False, load_default=False)
     date = fields.Date(required=True)
+
+
+class ClassRecordingUpdateSchema(Schema):
+    name = fields.Str(required=False, allow_none=True, validate=validate.Length(max=255))
+    description = fields.Str(required=False, allow_none=True, validate=validate.Length(max=1000))
+    video_url = fields.Str(required=False, validate=validate.Length(min=1, max=500))
+    tute_url = fields.Str(required=False, validate=validate.Length(min=1, max=500))
+    type = fields.Str(required=False, validate=validate.OneOf(['topik', 'spoken', 'eps-topik']))
+    is_expired = fields.Boolean(required=False)
+    date = fields.Date(required=False)

@@ -5,7 +5,7 @@ import logging
 from extensions import db
 from models.class_recording import ClassRecording
 from models.user import User
-from schemas import ClassRecordingCreateSchema
+from schemas import ClassRecordingCreateSchema, ClassRecordingUpdateSchema
 
 logger = logging.getLogger(__name__)
 
@@ -221,3 +221,118 @@ def get_class_recordings():
                 "error_code": "CLASS_RECORDINGS_FETCH_ERROR",
             }
         ), 500
+
+
+@class_recording_bp.route("/class-recordings/<int:recording_id>", methods=["PUT"])
+def update_class_recording(recording_id):
+    """
+    Update a class recording
+    """
+    schema = ClassRecordingUpdateSchema()
+    try:
+        class_recording = ClassRecording.query.get(recording_id)
+        if not class_recording:
+            return jsonify(
+                {
+                    "status": "error",
+                    "message": "Class recording not found",
+                    "error_code": "CLASS_RECORDING_NOT_FOUND",
+                }
+            ), 404
+
+        try:
+            data = schema.load(request.get_json() or {})
+        except ValidationError as e:
+            return jsonify(
+                {
+                    "status": "error",
+                    "message": "Validation error",
+                    "errors": e.messages,
+                    "error_code": "VALIDATION_ERROR",
+                }
+            ), 400
+
+        if not data:
+            return jsonify(
+                {
+                    "status": "error",
+                    "message": "No valid fields provided for update",
+                    "error_code": "NO_UPDATE_FIELDS",
+                }
+            ), 400
+
+        for field, value in data.items():
+            setattr(class_recording, field, value)
+
+        db.session.commit()
+
+        return jsonify(
+            {
+                "status": "success",
+                "message": "Class recording updated successfully",
+                "data": {
+                    "class_recording": {
+                        "id": class_recording.id,
+                        "name": class_recording.name,
+                        "description": class_recording.description,
+                        "video_url": class_recording.video_url,
+                        "tute_url": class_recording.tute_url,
+                        "type": class_recording.type,
+                        "is_expired": class_recording.is_expired,
+                        "date": class_recording.date.isoformat() if class_recording.date else None,
+                    }
+                },
+            }
+        ), 200
+    except Exception as e:
+        logger.error(f"Unexpected error during class recording update: {str(e)}", exc_info=True)
+        db.session.rollback()
+        return jsonify(
+            {
+                "status": "error",
+                "message": "An unexpected error occurred during class recording update",
+                "error_code": "CLASS_RECORDING_UPDATE_ERROR",
+            }
+        ), 500
+
+
+@class_recording_bp.route("/class-recordings/<int:recording_id>", methods=["DELETE"])
+def delete_class_recording(recording_id):
+    """
+    Delete a class recording
+    """
+    try:
+        class_recording = ClassRecording.query.get(recording_id)
+        if not class_recording:
+            return jsonify(
+                {
+                    "status": "error",
+                    "message": "Class recording not found",
+                    "error_code": "CLASS_RECORDING_NOT_FOUND",
+                }
+            ), 404
+
+        db.session.delete(class_recording)
+        db.session.commit()
+
+        return jsonify(
+            {
+                "status": "success",
+                "message": "Class recording deleted successfully",
+                "data": {"id": recording_id},
+            }
+        ), 200
+    except Exception as e:
+        logger.error(f"Unexpected error during class recording deletion: {str(e)}", exc_info=True)
+        db.session.rollback()
+        return jsonify(
+            {
+                "status": "error",
+                "message": "An unexpected error occurred during class recording deletion",
+                "error_code": "CLASS_RECORDING_DELETE_ERROR",
+            }
+        ), 500
+
+
+
+
