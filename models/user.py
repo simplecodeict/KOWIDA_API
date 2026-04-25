@@ -21,6 +21,9 @@ class User(db.Model):
     is_reference_paid = db.Column(db.Boolean, default=False)
     share_paid = db.Column(db.Boolean, default=False, nullable=False)
     is_logged = db.Column(db.Boolean, default=True, nullable=False)
+    is_spoken = db.Column(db.Boolean, default=False, nullable=False)
+    is_topik = db.Column(db.Boolean, default=False, nullable=False)
+    have_recording_access = db.Column(db.Boolean, default=False, nullable=False)
     paid_amount = db.Column(db.Numeric(10, 2), default=0, nullable=False)
     expo_push_token = db.Column(db.String(500), nullable=False, default='pending')
     created_at = db.Column(db.DateTime)
@@ -48,6 +51,9 @@ class User(db.Model):
         self.is_active = False
         self.share_paid = False  # Default to False for new users
         self.is_logged = True  # Default to True for new users
+        self.is_spoken = False
+        self.is_topik = False
+        self.have_recording_access = False
         # Explicitly set the created_at time to ensure correct timezone
         # Store local time without timezone info to avoid UTC conversion
         self.created_at = datetime.now(colombo_tz).replace(tzinfo=None)

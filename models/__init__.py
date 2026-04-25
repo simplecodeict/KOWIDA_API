@@ -11,5 +11,6 @@ from .version import Version
 from .user_token import UserToken
 from .notification import Notification
 from .shared_transaction import SharedTransaction
+from .class_recording import ClassRecording
 
-__all__ = ['User', 'BankDetails', 'Reference', 'Transaction', 'TransactionDetails', 'Offer', 'Version', 'UserToken', 'Notification', 'SharedTransaction']
+__all__ = ['User', 'BankDetails', 'Reference', 'Transaction', 'TransactionDetails', 'Offer', 'Version', 'UserToken', 'Notification', 'SharedTransaction', 'ClassRecording']

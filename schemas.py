@@ -155,3 +155,13 @@ class VersionCreateSchema(Schema):
 
 class VersionUpdateSchema(Schema):
     version = fields.Str(required=True, validate=validate.Length(min=1, max=50)) 
+
+
+class ClassRecordingCreateSchema(Schema):
+    name = fields.Str(required=False, allow_none=True, validate=validate.Length(max=255))
+    description = fields.Str(required=False, allow_none=True, validate=validate.Length(max=1000))
+    video_url = fields.Str(required=True, validate=validate.Length(min=1, max=500))
+    tute_url = fields.Str(required=True, validate=validate.Length(min=1, max=500))
+    type = fields.Str(required=True, validate=validate.OneOf(['topik', 'spoken', 'eps-topik']))
+    is_expired = fields.Boolean(required=False, load_default=False)
+    date = fields.Date(required=True)
