@@ -96,6 +96,9 @@ def get_all_sllc_users():
         if params.get('payment_method'):
             query = query.filter(User.payment_method == params['payment_method'])
             
+        # Order by newest users first
+        query = query.order_by(User.created_at.desc())
+
         # Apply pagination
         page = params.get('page', 1)
         per_page = params.get('per_page', 10)
