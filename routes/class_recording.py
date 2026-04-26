@@ -113,7 +113,7 @@ def get_class_recordings():
 
         allowed_types = []
         if user.is_topik:
-            allowed_types.extend(["topik", "eps-topik"])
+            allowed_types.append("topik")
         if user.is_spoken:
             allowed_types.append("spoken")
 
