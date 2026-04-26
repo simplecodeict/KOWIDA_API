@@ -10,7 +10,7 @@ class ClassRecording(db.Model):
     video_url = db.Column(db.String(500), nullable=False)
     tute_url = db.Column(db.String(500), nullable=False)
     type = db.Column(
-        db.Enum("topik", "spoken", "eps-topik", name="class_recording_type"),
+        db.Enum("topik", "spoken", name="class_recording_type"),
         nullable=False,
     )
     is_expired = db.Column(db.Boolean, default=False, nullable=False)
