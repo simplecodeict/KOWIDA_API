@@ -170,7 +170,7 @@ def get_class_recordings():
             page = 1
         per_page = 10
 
-        pagination = query.order_by(ClassRecording.date.asc(), ClassRecording.id.asc()).paginate(
+        pagination = query.order_by(ClassRecording.date.asc()).paginate(
             page=page, per_page=per_page, error_out=False
         )
 
