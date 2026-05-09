@@ -30,6 +30,10 @@ auth_bp = Blueprint('auth', __name__)
 EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send"
 ADMIN_PHONE = "0764858569"
 
+# Stripped from full international numbers before storing national digits (longest prefix first when adding more).
+PHONE_CC_PREFIXES = ('94', '82')
+
+
 def send_notification_to_admin(full_name, paid_amount, user_promo_code=None):
     """
     Send push notification to admin(s) when payment is made
@@ -158,6 +162,32 @@ def format_phone_for_webhook(phone: str) -> str:
         digits_only = digits_only[1:]
 
     return f'+94{digits_only}' if digits_only else '+94'
+
+
+def normalize_phone_for_db(phone: str) -> str:
+    """
+    National subscriber digits only: remove formatting, optional CC prefixes (94, 82),
+    and national trunk leading zeros. Examples:
+    940764858569 -> 764858569; 8201096759506 -> 1096759506; 0764858569 -> 764858569.
+    """
+    if not phone:
+        return ''
+    digits = re.sub(r'\D', '', str(phone).strip())
+    if not digits:
+        return ''
+
+    while True:
+        digits = digits.lstrip('0')
+        if not digits:
+            return ''
+        stripped_cc = False
+        for cc in PHONE_CC_PREFIXES:
+            if digits.startswith(cc):
+                digits = digits[len(cc):]
+                stripped_cc = True
+                break
+        if not stripped_cc:
+            return digits
 
 # SLLC user registration
 @auth_bp.route('/register', methods=['POST'])
@@ -700,7 +730,14 @@ def pre_register():
     try:
         # Validate request data (expecting JSON)
         try:
-            data = schema.load(request.get_json())
+            payload = request.get_json()
+            if not isinstance(payload, dict):
+                payload = {}
+            else:
+                payload = dict(payload)
+            if payload.get('phone') is not None:
+                payload['phone'] = normalize_phone_for_db(str(payload['phone']))
+            data = schema.load(payload)
         except ValidationError as e:
             return jsonify({
                 'status': 'error',
