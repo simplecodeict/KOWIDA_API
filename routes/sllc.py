@@ -5,7 +5,8 @@ from models.bank_details import BankDetails
 from models.reference import Reference
 from models.transaction import Transaction
 from models.notification import Notification
-from schemas import UserFilterSchema, TransactionFilterSchema, PreRegisterSchema, PreRegisterSchema
+from schemas import UserFilterSchema, TransactionFilterSchema, PreRegisterSchema
+from routes.auth import generate_token, normalize_phone_for_db
 from flask_jwt_extended import jwt_required, create_access_token, decode_token
 from marshmallow import ValidationError
 from datetime import datetime
@@ -746,55 +747,44 @@ def create_sllc_notification():
 def sllc_pre_register():
     """
     Pre-register a user for SLLC with promo_code = 'SL001' by default
-    Similar to /api/auth/pre-register but automatically sets promo_code to 'SL001'
-    Phone number validation is handled by frontend - accepts any phone number from payload
+    Same phone normalization as /api/auth/pre-register (strip CC 94/82, trunk 0), then
+    PreRegisterSchema validation. promo_code is set to 'SL001'.
     """
     try:
-        # Get request data directly (no phone validation)
+        schema = PreRegisterSchema()
         request_data = request.get_json()
-        if not request_data:
+        if not isinstance(request_data, dict):
             return jsonify({
                 'status': 'error',
                 'message': 'Request body is required',
                 'error_code': 'VALIDATION_ERROR'
             }), 400
-        
-        # Validate only full_name (phone validation removed - handled by frontend)
-        full_name = request_data.get('full_name')
-        if not full_name or len(full_name.strip()) < 2:
-            return jsonify({
-                'status': 'error',
-                'message': 'Validation error',
-                'errors': {'full_name': ['Full name must be at least 2 characters']},
-                'error_code': 'VALIDATION_ERROR'
-            }), 400
-        
-        # Get phone directly from payload without validation
-        phone = request_data.get('phone')
-        if not phone:
-            return jsonify({
-                'status': 'error',
-                'message': 'Validation error',
-                'errors': {'phone': ['Phone number is required']},
-                'error_code': 'VALIDATION_ERROR'
-            }), 400
-        
-        # Get password (optional)
-        password = request_data.get('password')
-        
-        # Get expo_push_token from payload (optional, set to None if not provided)
-        expo_push_token = request_data.get('expo_push_token')
-        if not expo_push_token or expo_push_token.strip() == '':
-            expo_push_token = None
-        
-        # Prepare data dict
-        data = {
-            'full_name': full_name.strip(),
-            'phone': phone.strip(),
-            'password': password,
-            'expo_push_token': expo_push_token
+
+        payload = dict(request_data)
+        if payload.get('phone') is not None:
+            payload['phone'] = normalize_phone_for_db(str(payload['phone']))
+
+        schema_payload = {
+            'full_name': payload.get('full_name'),
+            'phone': payload.get('phone'),
+            'password': payload.get('password'),
         }
-        
+        try:
+            data = schema.load(schema_payload)
+        except ValidationError as e:
+            return jsonify({
+                'status': 'error',
+                'message': 'Validation error',
+                'errors': e.messages,
+                'error_code': 'VALIDATION_ERROR'
+            }), 400
+
+        # Optional expo_push_token (not part of PreRegisterSchema)
+        expo_push_token = request_data.get('expo_push_token')
+        if not expo_push_token or str(expo_push_token).strip() == '':
+            expo_push_token = None
+        data['expo_push_token'] = expo_push_token
+
         logging.info(f"Received SLLC pre-registration data: {data}")
         
         # Check if user already exists
@@ -830,8 +820,6 @@ def sllc_pre_register():
             db.session.add(new_user)
             db.session.commit()
             
-            # Generate access token using auth route's generate_token function
-            from routes.auth import generate_token
             access_token = generate_token(new_user.id)
             
             return jsonify({
