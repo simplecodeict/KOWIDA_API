@@ -203,9 +203,14 @@ def register():
         elif 'document' in request.files:
             bank_slip = request.files['document']
             
+        # Normalize phone before validation so checks/storage use canonical value
+        form_payload = dict(request.form)
+        if form_payload.get('phone') is not None:
+            form_payload['phone'] = normalize_phone_for_db(str(form_payload['phone']))
+
         # Validate request data first
         try:
-            data = schema.load(request.form)
+            data = schema.load(form_payload)
         except ValidationError as e:
             return jsonify({
                 'status': 'error',
@@ -389,6 +394,8 @@ def make_payment():
         if not user:
             # Validate required fields for new user creation
             form_data = dict(request.form)
+            if form_data.get('phone') is not None:
+                form_data['phone'] = normalize_phone_for_db(str(form_data['phone']))
             required_fields = ['full_name', 'phone', 'password']
             missing_fields = [field for field in required_fields if not form_data.get(field)]
             
@@ -565,6 +572,8 @@ def make_payment():
         # Create a copy of form data without user_id for schema validation
         form_data = dict(request.form)
         form_data.pop('user_id', None)  # Remove user_id from form data before validation
+        if form_data.get('phone') is not None:
+            form_data['phone'] = normalize_phone_for_db(str(form_data['phone']))
             
         # Validate request data first (allow partial updates for existing user)
         try:
@@ -860,8 +869,17 @@ def login():
         # Log request (excluding sensitive data)
         logger.debug(f"Login attempt from IP: {request.remote_addr}")
         
+        # Normalize phone before validation and lookup
+        login_payload = request.get_json()
+        if not isinstance(login_payload, dict):
+            login_payload = {}
+        else:
+            login_payload = dict(login_payload)
+        if login_payload.get('phone') is not None:
+            login_payload['phone'] = normalize_phone_for_db(str(login_payload['phone']))
+
         # Validate request data
-        data = schema.load(request.get_json())
+        data = schema.load(login_payload)
         
         # Find user by phone
         user = User.query.filter_by(phone=data['phone']).first()
@@ -1035,8 +1053,17 @@ def admin_login():
         # Log request (excluding sensitive data)
         logger.debug(f"Admin login attempt from IP: {request.remote_addr}")
         
+        # Normalize phone before validation and lookup
+        login_payload = request.get_json()
+        if not isinstance(login_payload, dict):
+            login_payload = {}
+        else:
+            login_payload = dict(login_payload)
+        if login_payload.get('phone') is not None:
+            login_payload['phone'] = normalize_phone_for_db(str(login_payload['phone']))
+
         # Validate request data
-        data = schema.load(request.get_json())
+        data = schema.load(login_payload)
         
         # Find user by phone
         user = User.query.filter_by(phone=data['phone']).first()
