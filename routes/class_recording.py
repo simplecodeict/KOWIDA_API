@@ -39,6 +39,8 @@ def create_class_recording():
             type=data["type"],
             is_expired=data.get("is_expired", False),
             date=data["date"],
+            vocabulary_pdf_url=data.get("vocabulary_pdf_url"),
+            vocabulary_audio_track=data.get("vocabulary_audio_track"),
         )
 
         db.session.add(class_recording)
@@ -55,6 +57,8 @@ def create_class_recording():
                         "description": class_recording.description,
                         "video_url": class_recording.video_url,
                         "tute_url": class_recording.tute_url,
+                        "vocabulary_pdf_url": class_recording.vocabulary_pdf_url,
+                        "vocabulary_audio_track": class_recording.vocabulary_audio_track,
                         "type": class_recording.type,
                         "is_expired": class_recording.is_expired,
                         "date": class_recording.date.isoformat() if class_recording.date else None,
@@ -181,6 +185,8 @@ def get_class_recordings():
                 "description": item.description,
                 "video_url": item.video_url,
                 "tute_url": item.tute_url,
+                "vocabulary_pdf_url": item.vocabulary_pdf_url,
+                "vocabulary_audio_track": item.vocabulary_audio_track,
                 "type": item.type,
                 "is_expired": item.is_expired,
                 "date": item.date.isoformat() if item.date else None,
@@ -277,6 +283,8 @@ def update_class_recording(recording_id):
                         "description": class_recording.description,
                         "video_url": class_recording.video_url,
                         "tute_url": class_recording.tute_url,
+                        "vocabulary_pdf_url": class_recording.vocabulary_pdf_url,
+                        "vocabulary_audio_track": class_recording.vocabulary_audio_track,
                         "type": class_recording.type,
                         "is_expired": class_recording.is_expired,
                         "date": class_recording.date.isoformat() if class_recording.date else None,

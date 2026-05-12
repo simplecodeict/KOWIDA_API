@@ -165,6 +165,8 @@ class ClassRecordingCreateSchema(Schema):
     type = fields.Str(required=True, validate=validate.OneOf(['topik', 'spoken', 'eps-topik']))
     is_expired = fields.Boolean(required=False, load_default=False)
     date = fields.Date(required=True)
+    vocabulary_pdf_url = fields.Str(required=False, allow_none=True, validate=validate.Length(max=500))
+    vocabulary_audio_track = fields.Str(required=False, allow_none=True, validate=validate.Length(max=500))
 
 
 class ClassRecordingUpdateSchema(Schema):
@@ -175,3 +177,5 @@ class ClassRecordingUpdateSchema(Schema):
     type = fields.Str(required=False, validate=validate.OneOf(['topik', 'spoken', 'eps-topik']))
     is_expired = fields.Boolean(required=False)
     date = fields.Date(required=False)
+    vocabulary_pdf_url = fields.Str(required=False, allow_none=True, validate=validate.Length(max=500))
+    vocabulary_audio_track = fields.Str(required=False, allow_none=True, validate=validate.Length(max=500))

@@ -15,3 +15,5 @@ class ClassRecording(db.Model):
     )
     is_expired = db.Column(db.Boolean, default=False, nullable=False)
     date = db.Column(db.Date, nullable=False)
+    vocabulary_pdf_url = db.Column(db.String(500), nullable=True)
+    vocabulary_audio_track = db.Column(db.String(500), nullable=True)
