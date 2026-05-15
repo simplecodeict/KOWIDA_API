@@ -7,7 +7,7 @@ from sqlalchemy.exc import IntegrityError
 from schemas import UserRegistrationSchema, LoginSchema
 from marshmallow import ValidationError
 from flask_jwt_extended import jwt_required, create_access_token
-from routes.auth import generate_token
+from routes.auth import generate_token, normalize_phone_for_db
 from datetime import datetime, timedelta
 import logging
 import secrets
@@ -481,9 +481,14 @@ def register():
         elif 'document' in request.files:
             bank_slip = request.files['document']
             
+        # Normalize phone before validation so checks/storage use canonical value
+        form_payload = dict(request.form)
+        if form_payload.get('phone') is not None:
+            form_payload['phone'] = normalize_phone_for_db(str(form_payload['phone']))
+
         # Validate request data first
         try:
-            data = schema.load(request.form)
+            data = schema.load(form_payload)
         except ValidationError as e:
             return jsonify({
                 'status': 'error',
