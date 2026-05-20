@@ -4,12 +4,13 @@ from models.reference import Reference
 from models.bank_details import BankDetails
 from models.transaction import Transaction
 from models.transaction_details import TransactionDetails
+from models.user_token import UserToken
 from models.base_amount import BaseAmount
 from extensions import db
 from marshmallow import ValidationError
 from datetime import datetime
 from sqlalchemy import and_, distinct, or_
-from schemas import UserPhoneSchema, UserFilterSchema, ReferenceCodeSchema, UserRegistrationSchema, AdminRegistrationSchema, MakeTransactionSchema, TransactionFilterSchema, ReferrerStatisticsSchema
+from schemas import UserPhoneSchema, UserFilterSchema, AllUsersFilterSchema, IsLoggedUpdateSchema, ReferenceCodeSchema, UserRegistrationSchema, AdminRegistrationSchema, MakeTransactionSchema, TransactionFilterSchema, ReferrerStatisticsSchema
 from flask_jwt_extended import jwt_required
 from extensions import colombo_tz, upload_file_to_s3
 import requests
@@ -20,6 +21,19 @@ logger = logging.getLogger(__name__)
 admin_bp = Blueprint('admin', __name__)
 
 EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send"
+
+
+def _delete_user_and_related_records(user):
+    """Delete a user and all related database records."""
+    TransactionDetails.query.filter_by(user_id=user.id).delete()
+    for trans in Transaction.query.filter_by(user_id=user.id).all():
+        TransactionDetails.query.filter_by(transaction_id=trans.id).delete()
+        db.session.delete(trans)
+    BankDetails.query.filter_by(user_id=user.id).delete()
+    UserToken.query.filter_by(user_id=user.id).delete()
+    for ref in Reference.query.filter_by(phone=user.phone).all():
+        db.session.delete(ref)
+    db.session.delete(user)
 
 def send_activation_notification_to_user(user):
     """
@@ -221,8 +235,8 @@ def get_all_users():
         if params.get('payment_method'):
             query = query.filter(User.payment_method == params['payment_method'])
             
-        # Order by created_at in descending order (newest first)
-        query = query.order_by(User.created_at.desc())
+        # Order by id DESC (latest registered users first)
+        query = query.order_by(User.id.desc())
             
         # Apply pagination
         page = params.get('page', 1)
@@ -293,6 +307,209 @@ def get_all_users():
         return jsonify({
             'status': 'error',
             'message': str(e)
+        }), 500
+
+@admin_bp.route('/all-users', methods=['GET'])
+@jwt_required()
+def get_all_users_unfiltered():
+    """
+    Get all users with pagination (no base filters).
+    Optional filters: phone (partial match), name (partial match on full_name).
+    Ordered by user id DESC (newest first).
+    """
+    schema = AllUsersFilterSchema()
+    try:
+        params = schema.load(request.args or {})
+
+        query = User.query
+
+        if params.get('phone'):
+            query = query.filter(User.phone.like(f'%{params["phone"]}%'))
+
+        if params.get('name'):
+            query = query.filter(User.full_name.like(f'%{params["name"]}%'))
+
+        query = query.order_by(User.id.desc())
+
+        page = params.get('page', 1)
+        per_page = params.get('per_page', 10)
+        pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+
+        users_data = []
+        for user in pagination.items:
+            reference_data = []
+            if user.promo_code:
+                reference = Reference.query.filter_by(code=user.promo_code).first()
+                if reference:
+                    reference_data = [{
+                        'code': reference.code,
+                        'discount_amount': float(reference.discount_amount) if reference.discount_amount else None,
+                        'received_amount': float(reference.received_amount) if reference.received_amount else None,
+                        'created_at': reference.created_at.isoformat()
+                    }]
+
+            users_data.append({
+                'id': user.id,
+                'full_name': user.full_name,
+                'phone': user.phone,
+                'role': user.role,
+                'status': str(user.status) if user.status else None,
+                'payment_method': user.payment_method,
+                'url': user.url,
+                'promo_code': user.promo_code,
+                'paid_amount': float(user.paid_amount),
+                'is_reference_paid': user.is_reference_paid,
+                'is_active': user.is_active,
+                'share_paid': user.share_paid,
+                'is_logged': user.is_logged,
+                'created_at': user.created_at.isoformat() if user.created_at else None,
+                'updated_at': user.updated_at.isoformat() if user.updated_at else None,
+                'bank_details': [{
+                    'bank_name': bd.bank_name,
+                    'owner_name': bd.name,
+                    'account_number': bd.account_number,
+                    'branch_name': bd.branch
+                } for bd in user.bank_details],
+                'references': reference_data
+            })
+
+        return jsonify({
+            'status': 'success',
+            'message': 'All users retrieved successfully',
+            'data': {
+                'users': users_data,
+                'pagination': {
+                    'total_items': pagination.total,
+                    'total_pages': pagination.pages,
+                    'current_page': page,
+                    'per_page': per_page,
+                    'has_next': pagination.has_next,
+                    'has_prev': pagination.has_prev
+                }
+            }
+        }), 200
+
+    except ValidationError as e:
+        return jsonify({
+            'status': 'error',
+            'message': 'Validation error',
+            'errors': e.messages
+        }), 400
+
+    except Exception as e:
+        logger.error(f"Error retrieving all users: {str(e)}", exc_info=True)
+        return jsonify({
+            'status': 'error',
+            'message': 'An error occurred while retrieving all users',
+            'error': str(e)
+        }), 500
+
+@admin_bp.route('/users/<int:user_id>', methods=['DELETE'])
+@jwt_required()
+def delete_user_account(user_id):
+    """
+    Delete a user account by id (admin).
+    Removes related references, transactions, bank details, and push tokens.
+    """
+    try:
+        user = User.query.get(user_id)
+        if not user:
+            return jsonify({
+                'status': 'error',
+                'message': 'User not found'
+            }), 404
+
+        deleted_user_info = {
+            'id': user.id,
+            'phone': user.phone,
+            'full_name': user.full_name,
+            'role': user.role
+        }
+
+        logger.info(f"Admin deleting account for user {user.phone} (ID: {user.id})")
+
+        try:
+            _delete_user_and_related_records(user)
+            db.session.commit()
+        except Exception as db_error:
+            db.session.rollback()
+            logger.error(f"Database error during user deletion: {str(db_error)}", exc_info=True)
+            return jsonify({
+                'status': 'error',
+                'message': 'Failed to delete account due to database constraints',
+                'error': str(db_error)
+            }), 500
+
+        logger.info(f"Account successfully deleted: {deleted_user_info}")
+
+        return jsonify({
+            'status': 'success',
+            'message': 'Account deleted successfully',
+            'data': {
+                'deleted_user': {
+                    **deleted_user_info,
+                    'deleted_at': datetime.now(colombo_tz).isoformat()
+                }
+            }
+        }), 200
+
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Error deleting user account: {str(e)}", exc_info=True)
+        return jsonify({
+            'status': 'error',
+            'message': 'An error occurred while deleting the account',
+            'error': str(e)
+        }), 500
+
+@admin_bp.route('/update-is-logged', methods=['POST'])
+@jwt_required()
+def update_is_logged():
+    """
+    Update a user's is_logged flag.
+    Body: { "user_id": 1, "is_logged": true }
+    """
+    schema = IsLoggedUpdateSchema()
+    try:
+        data = schema.load(request.get_json() or {})
+
+        user = User.query.get(data['user_id'])
+        if not user:
+            return jsonify({
+                'status': 'error',
+                'message': 'User not found'
+            }), 404
+
+        user.is_logged = data['is_logged']
+        user.updated_at = datetime.now(colombo_tz).replace(tzinfo=None)
+        db.session.commit()
+
+        return jsonify({
+            'status': 'success',
+            'message': 'is_logged updated successfully',
+            'data': {
+                'id': user.id,
+                'full_name': user.full_name,
+                'phone': user.phone,
+                'is_logged': user.is_logged,
+                'updated_at': user.updated_at.isoformat()
+            }
+        }), 200
+
+    except ValidationError as e:
+        return jsonify({
+            'status': 'error',
+            'message': 'Validation error',
+            'errors': e.messages
+        }), 400
+
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Error updating is_logged: {str(e)}", exc_info=True)
+        return jsonify({
+            'status': 'error',
+            'message': 'An error occurred while updating is_logged',
+            'error': str(e)
         }), 500
 
 @admin_bp.route('/requests', methods=['GET'])
@@ -415,8 +632,8 @@ def get_pre_register_users():
         if params.get('end_date'):
             query = query.filter(User.created_at <= datetime.combine(params['end_date'], datetime.max.time()))
             
-        # Order by created_at in descending order (newest first)
-        query = query.order_by(User.created_at.desc())
+        # Order by id DESC (latest registered users first)
+        query = query.order_by(User.id.desc())
             
         # Get total count of all pre-register users (before pagination)
         total_count = query.count()
@@ -1467,7 +1684,7 @@ def get_pre_register_users_for_n8n():
             User.role == 'user',
             User.status == 'pre-register',
             or_(User.promo_code != 'SL001', User.promo_code.is_(None))
-        ).order_by(User.created_at.desc()).all()
+        ).order_by(User.id.desc()).all()
         
         # Prepare response data
         users_data = []

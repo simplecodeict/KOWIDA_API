@@ -250,7 +250,7 @@ def get_requests():
             User.status == 'pending',
             User.role == 'user',
             or_(User.promo_code.is_(None), User.promo_code != 'SL001')
-        ).order_by(User.created_at.desc())
+        ).order_by(User.id.desc())
         
         # Get total count before pagination
         total_count = requests_query.count()
@@ -399,8 +399,8 @@ def get_users():
         if promo_code_filter:
             users_query = users_query.filter(User.promo_code == promo_code_filter)
         
-        # Order by created_at DESC (latest created accounts display first)
-        users_query = users_query.order_by(User.created_at.desc())
+        # Order by id DESC (latest registered users first)
+        users_query = users_query.order_by(User.id.desc())
         
         # Get total count before pagination
         total_count = users_query.count()
@@ -686,8 +686,8 @@ def get_pre_register_users():
         if phone_filter:
             pre_register_query = pre_register_query.filter(User.phone.like(f'%{phone_filter}%'))
         
-        # Order by created_at DESC (latest created accounts display first)
-        pre_register_query = pre_register_query.order_by(User.created_at.desc())
+        # Order by id DESC (latest registered users first)
+        pre_register_query = pre_register_query.order_by(User.id.desc())
         
         # Get total count before pagination
         total_count = pre_register_query.count()
