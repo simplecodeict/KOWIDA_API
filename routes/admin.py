@@ -9,7 +9,7 @@ from models.base_amount import BaseAmount
 from extensions import db
 from marshmallow import ValidationError
 from datetime import datetime
-from sqlalchemy import and_, distinct, or_
+from sqlalchemy import and_, distinct, func, or_
 from schemas import UserPhoneSchema, UserFilterSchema, AllUsersFilterSchema, IsLoggedUpdateSchema, ReferenceCodeSchema, UserRegistrationSchema, AdminRegistrationSchema, MakeTransactionSchema, TransactionFilterSchema, ReferrerStatisticsSchema
 from flask_jwt_extended import jwt_required
 from extensions import colombo_tz, upload_file_to_s3
@@ -313,21 +313,22 @@ def get_all_users():
 @jwt_required()
 def get_all_users_unfiltered():
     """
-    Get all users with pagination (no base filters).
-    Optional filters: phone (partial match), name (partial match on full_name).
+    Get users with role='user', pagination, and optional filters.
+    Optional filters: phone (partial match), name (case-insensitive partial match on full_name).
     Ordered by user id DESC (newest first).
     """
     schema = AllUsersFilterSchema()
     try:
         params = schema.load(request.args or {})
 
-        query = User.query
+        query = User.query.filter(User.role == 'user')
 
         if params.get('phone'):
             query = query.filter(User.phone.like(f'%{params["phone"]}%'))
 
         if params.get('name'):
-            query = query.filter(User.full_name.like(f'%{params["name"]}%'))
+            name_filter = params['name'].strip().lower()
+            query = query.filter(func.lower(User.full_name).like(f'%{name_filter}%'))
 
         query = query.order_by(User.id.desc())
 
