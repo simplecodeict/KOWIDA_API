@@ -255,7 +255,7 @@ def get_all_users():
                         'code': reference.code,
                         'discount_amount': float(reference.discount_amount) if reference.discount_amount else None,
                         'received_amount': float(reference.received_amount) if reference.received_amount else None,
-                        'created_at': reference.created_at.isoformat()
+                        'created_at': reference.created_at.isoformat() if reference.created_at else None
                     }]
             
             user_data = {
@@ -269,8 +269,8 @@ def get_all_users():
                 'paid_amount': float(user.paid_amount),
                 'is_reference_paid': user.is_reference_paid,
                 'is_active': user.is_active,
-                'created_at': user.created_at.isoformat(),
-                'updated_at': user.updated_at.isoformat(),
+                'created_at': user.created_at.isoformat() if user.created_at else None,
+                'updated_at': user.updated_at.isoformat() if user.updated_at else None,
                 'bank_details': [{
                     'bank_name': bd.bank_name,
                     'owner_name': bd.name,
@@ -345,7 +345,7 @@ def get_all_users_unfiltered():
                         'code': reference.code,
                         'discount_amount': float(reference.discount_amount) if reference.discount_amount else None,
                         'received_amount': float(reference.received_amount) if reference.received_amount else None,
-                        'created_at': reference.created_at.isoformat()
+                        'created_at': reference.created_at.isoformat() if reference.created_at else None
                     }]
 
             users_data.append({
