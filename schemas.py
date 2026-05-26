@@ -16,6 +16,9 @@ class UserRegistrationSchema(Schema):
     role = fields.Str(allow_none=True, validate=validate.OneOf(['admin', 'user', 'referer']))
     paid_amount = fields.Decimal(places=2, required=False, allow_none=True, validate=validate.Range(min=0))
     referal_coin = fields.Decimal(places=2, required=False, allow_none=True, validate=validate.Range(min=0))
+    have_recording_access = fields.Bool(required=False, load_default=False)
+    is_topik = fields.Bool(required=False, load_default=False)
+    is_spoken = fields.Bool(required=False, load_default=False)
     # url field is removed since it will be populated from S3
 
 class PreRegisterSchema(Schema):

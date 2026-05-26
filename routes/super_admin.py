@@ -469,6 +469,7 @@ def register():
     - status = 'register' (fixed)
     - is_logged = false (fixed)
     - share_paid = false (fixed)
+    - have_recording_access, is_topik, is_spoken from request (default false)
     """
     schema = UserRegistrationSchema()
     try:
@@ -594,6 +595,9 @@ def register():
             new_user.is_active = True  # Fixed to true
             new_user.is_logged = False  # Fixed to false
             new_user.share_paid = False  # Fixed to false
+            new_user.have_recording_access = data.get('have_recording_access', False)
+            new_user.is_topik = data.get('is_topik', False)
+            new_user.is_spoken = data.get('is_spoken', False)
             
             db.session.add(new_user)
             db.session.commit()
@@ -615,6 +619,9 @@ def register():
                         'is_active': new_user.is_active,
                         'is_logged': new_user.is_logged,
                         'share_paid': new_user.share_paid,
+                        'have_recording_access': new_user.have_recording_access,
+                        'is_topik': new_user.is_topik,
+                        'is_spoken': new_user.is_spoken,
                         'created_at': new_user.created_at.isoformat() if new_user.created_at else None
                     }
                 }
