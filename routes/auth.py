@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 auth_bp = Blueprint('auth', __name__)
 
 EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send"
-ADMIN_PHONE = "0764858569"
+ADMIN_PHONE = "764858569"
 
 # Stripped from full international numbers before storing national digits (longest prefix first when adding more).
 PHONE_CC_PREFIXES = ('94', '82')
@@ -50,7 +50,7 @@ def send_notification_to_admin(full_name, paid_amount, user_promo_code=None):
             # Find all admins where promo_code is None, empty, or not 'SL001'
             admins = User.query.filter(
                 User.role == 'admin',
-                User.phone == '0764858569'
+                User.phone == '764858569'
             ).all()
         
         # If no admins found, skip silently

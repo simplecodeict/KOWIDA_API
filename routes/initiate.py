@@ -20,6 +20,17 @@ def _get_notifications_query():
     ).order_by(Notification.created_at.desc())
 
 
+def _get_sllc_notifications_query():
+    return Notification.query.filter(
+        or_(
+            Notification.type == 'boost_knowledge',
+            Notification.type == 'quotes',
+            and_(Notification.type == 'announcement', Notification.who_see == 'SL001'),
+            and_(Notification.type == 'news', Notification.who_see == 'SL001')
+        )
+    ).order_by(Notification.created_at.desc())
+
+
 def _format_notification(notification):
     return {
         'id': notification.id,
@@ -78,5 +89,47 @@ def get_kowida_initiate():
         return jsonify({
             'status': 'error',
             'message': 'An error occurred while retrieving kowida initiate data',
+            'error': str(e)
+        }), 500
+
+
+@initiate_bp.route('/sllc', methods=['GET'])
+def get_sllc_initiate():
+    """
+    SLLC app initiate endpoint.
+    Returns version 1.2.0, notifications, and offer flag.
+    """
+    try:
+        page = request.args.get('page', 1, type=int)
+        per_page = 15
+
+        if page < 1:
+            page = 1
+
+        pagination = _get_sllc_notifications_query().paginate(
+            page=page,
+            per_page=per_page,
+            error_out=False
+        )
+
+        notifications_data = [
+            _format_notification(notification) for notification in pagination.items
+        ]
+
+        return jsonify({
+            'status': 'success',
+            'message': 'SLLC initiate data retrieved successfully',
+            'data': {
+                'version': '4.0.0',
+                'notifications': notifications_data,
+                'offer': False
+            }
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Error retrieving SLLC initiate data: {str(e)}", exc_info=True)
+        return jsonify({
+            'status': 'error',
+            'message': 'An error occurred while retrieving SLLC initiate data',
             'error': str(e)
         }), 500
