@@ -120,7 +120,7 @@ def get_sllc_initiate():
             'status': 'success',
             'message': 'SLLC initiate data retrieved successfully',
             'data': {
-                'version': '4.0.0',
+                'version': '4.2.0',
                 'notifications': notifications_data,
                 'offer': False
             }
