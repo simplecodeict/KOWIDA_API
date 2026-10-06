@@ -14,6 +14,7 @@ def _get_notifications_query():
         or_(
             Notification.type == 'boost_knowledge',
             Notification.type == 'quotes',
+            Notification.type == 'blog',
             and_(Notification.type == 'announcement', Notification.who_see != 'SL001'),
             and_(Notification.type == 'news', Notification.who_see != 'SL001')
         )
@@ -25,6 +26,7 @@ def _get_sllc_notifications_query():
         or_(
             Notification.type == 'boost_knowledge',
             Notification.type == 'quotes',
+            Notification.type == 'blog',
             and_(Notification.type == 'announcement', Notification.who_see == 'SL001'),
             and_(Notification.type == 'news', Notification.who_see == 'SL001')
         )

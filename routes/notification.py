@@ -340,7 +340,7 @@ def create_notification():
         
         # Send to SL001 users if applicable
         sllc_sent_count = 0
-        if notification_type in ['quotes', 'boost_knowledge']:
+        if notification_type in ['quotes', 'boost_knowledge', 'blog']:
             try:
                 from routes.sllc import send_notification_to_sllc_users
                 sllc_sent_count = send_notification_to_sllc_users(
@@ -542,6 +542,7 @@ def get_notifications():
             or_(
                 Notification.type == 'boost_knowledge',
                 Notification.type == 'quotes',
+                Notification.type == 'blog',
                 and_(Notification.type == 'announcement', Notification.who_see != 'SL001'),
                 and_(Notification.type == 'news', Notification.who_see != 'SL001')
             )
@@ -704,6 +705,75 @@ def get_boost_knowledge_notifications():
         return jsonify({
             'status': 'error',
             'message': 'An error occurred while retrieving boost knowledge notifications',
+            'error': str(e)
+        }), 500
+
+@notification_bp.route('/blog', methods=['GET'])
+def get_blog_notifications():
+    """
+    Get blog notifications with pagination.
+    Returns blog notifications for both SLLC and other users, ordered by created_at DESC.
+    """
+    try:
+        page = request.args.get('page', 1, type=int)
+        per_page = request.args.get('per_page', 15, type=int)
+
+        if page < 1:
+            page = 1
+
+        if per_page < 1:
+            per_page = 15
+        if per_page > 100:
+            per_page = 100
+
+        notifications_query = Notification.query.filter(
+            Notification.type == 'blog'
+        ).order_by(Notification.created_at.desc())
+
+        total_count = notifications_query.count()
+
+        pagination = notifications_query.paginate(
+            page=page,
+            per_page=per_page,
+            error_out=False
+        )
+
+        notifications_data = []
+        for notification in pagination.items:
+            notifications_data.append({
+                'id': notification.id,
+                'type': str(notification.type) if notification.type else None,
+                'header': notification.header,
+                'sub_header': notification.sub_header,
+                'body': notification.body,
+                'restriction_area': notification.restriction_area,
+                'url': notification.url,
+                'who_see': notification.who_see,
+                'created_at': notification.created_at.isoformat() if notification.created_at else None,
+                'updated_at': notification.updated_at.isoformat() if notification.updated_at else None
+            })
+
+        return jsonify({
+            'status': 'success',
+            'message': 'Blog notifications retrieved successfully',
+            'data': {
+                'notifications': notifications_data,
+                'pagination': {
+                    'page': page,
+                    'per_page': per_page,
+                    'total': total_count,
+                    'pages': pagination.pages,
+                    'has_next': pagination.has_next,
+                    'has_prev': pagination.has_prev
+                }
+            }
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Error retrieving blog notifications: {str(e)}", exc_info=True)
+        return jsonify({
+            'status': 'error',
+            'message': 'An error occurred while retrieving blog notifications',
             'error': str(e)
         }), 500
 

@@ -6,7 +6,7 @@ class Notification(db.Model):
     __tablename__ = 'notifications'
     
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    type = db.Column(Enum('announcement', 'quotes', 'news', 'boost_knowledge', name='notification_types'), nullable=True)
+    type = db.Column(Enum('announcement', 'quotes', 'news', 'boost_knowledge', 'blog', name='notification_types'), nullable=True)
     header = db.Column(db.String(255), nullable=True)
     sub_header = db.Column(db.String(255), nullable=True)
     body = db.Column(db.Text, nullable=True)

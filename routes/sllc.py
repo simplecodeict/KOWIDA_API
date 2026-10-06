@@ -526,6 +526,7 @@ def get_sllc_notifications():
     Returns:
     - All boost_knowledge notifications
     - All quotes notifications
+    - All blog notifications
     - Announcement notifications where who_see === 'SL001'
     - News notifications where who_see === 'SL001'
     Ordered by created_at DESC (newest first)
@@ -545,12 +546,14 @@ def get_sllc_notifications():
         # Query notifications with filters:
         # - All boost_knowledge notifications (regardless of who_see)
         # - All quotes notifications (regardless of who_see)
+        # - All blog notifications (regardless of who_see)
         # - Announcement notifications where who_see === 'SL001'
         # - News notifications where who_see === 'SL001'
         notifications_query = Notification.query.filter(
             or_(
                 Notification.type == 'boost_knowledge',
                 Notification.type == 'quotes',
+                Notification.type == 'blog',
                 and_(Notification.type == 'announcement', Notification.who_see == 'SL001'),
                 and_(Notification.type == 'news', Notification.who_see == 'SL001')
             )
