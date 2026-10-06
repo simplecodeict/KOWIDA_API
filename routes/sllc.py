@@ -746,6 +746,123 @@ def create_sllc_notification():
             'error': str(e)
         }), 500
 
+@sllc_bp.route('/pre-register-notifications', methods=['POST'])
+def create_sllc_pre_register_notification():
+    """
+    Create a notification and send it to SLLC users with status 'pre-register' only.
+    The notification who_see is set to 'SL001' so it stays in the SLLC lists.
+    """
+    try:
+        data = request.get_json()
+
+        notification_type = data.get('type')
+        header = data.get('header')
+        sub_header = data.get('sub_header')
+        body = data.get('body')
+        notification_body = data.get('notification_body')
+        restriction_area = data.get('restriction_area')
+        url = data.get('url')
+        who_see = 'SL001'
+
+        current_time = datetime.now(colombo_tz).replace(tzinfo=None)
+        notification = Notification(
+            type=notification_type,
+            header=header,
+            sub_header=sub_header,
+            body=body,
+            restriction_area=restriction_area,
+            url=url,
+            who_see=who_see,
+            created_at=current_time,
+            updated_at=current_time
+        )
+        db.session.add(notification)
+        db.session.commit()
+
+        users = User.query.filter(
+            User.expo_push_token != 'pending'
+        ).filter(
+            User.expo_push_token.isnot(None)
+        ).filter(
+            User.role != 'admin'
+        ).filter(
+            User.status == 'pre-register'
+        ).filter(
+            User.promo_code == 'SL001'
+        ).with_entities(User.expo_push_token).all()
+
+        tokens = [u.expo_push_token for u in users if u.expo_push_token and u.expo_push_token.strip()]
+
+        successfully_sent_count = 0
+        failed_count = 0
+        elapsed_time = 0
+
+        if not tokens:
+            logger.info("No SLLC pre-register users with valid tokens found")
+        else:
+            from routes.notification import send_notifications_concurrently
+
+            push_title = "SLLC"
+            push_subtitle = sub_header or ""
+            push_body = notification_body if notification_body is not None else (body or "New notification")
+
+            notification_data = {}
+            if url:
+                notification_data['url'] = url
+
+            logger.info(f"Starting SLLC pre-register notification send to {len(tokens)} users")
+            start_time = time.time()
+
+            successfully_sent_count, failed_count = send_notifications_concurrently(
+                tokens=tokens,
+                push_title=push_title,
+                push_subtitle=push_subtitle,
+                push_body=push_body,
+                notification_data=notification_data
+            )
+
+            elapsed_time = time.time() - start_time
+            logger.info(
+                f"SLLC pre-register notification sending completed in {elapsed_time:.2f}s: "
+                f"{successfully_sent_count} success, {failed_count} failed"
+            )
+
+        message = f'Notification successfully sent to {successfully_sent_count} SLLC pre-register users'
+        if failed_count > 0:
+            message += f' ({failed_count} failed)'
+
+        return jsonify({
+            'status': 'success',
+            'message': message,
+            'data': {
+                'notification': {
+                    'id': notification.id,
+                    'type': str(notification.type) if notification.type else None,
+                    'header': notification.header,
+                    'sub_header': notification.sub_header,
+                    'body': notification.body,
+                    'restriction_area': notification.restriction_area,
+                    'url': notification.url,
+                    'who_see': notification.who_see,
+                    'created_at': notification.created_at.isoformat() if notification.created_at else None,
+                    'updated_at': notification.updated_at.isoformat() if notification.updated_at else None
+                },
+                'successfully_sent_count': successfully_sent_count,
+                'failed_count': failed_count,
+                'total_tokens': len(tokens),
+                'processing_time_seconds': round(elapsed_time, 2)
+            }
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Error creating SLLC pre-register notification: {str(e)}", exc_info=True)
+        db.session.rollback()
+        return jsonify({
+            'status': 'error',
+            'message': 'An error occurred while creating the SLLC pre-register notification',
+            'error': str(e)
+        }), 500
+
 @sllc_bp.route('/pre-register', methods=['POST'])
 def sllc_pre_register():
     """
