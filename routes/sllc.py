@@ -641,7 +641,7 @@ def send_notification_to_sllc_users(header, sub_header, body, notification_body,
             return 0
         
         # Prepare push notification content
-        push_title = "SLLC"
+        push_title = "Korean Pro"
         push_subtitle = sub_header or ""
         push_body = notification_body if notification_body is not None else (body or "New notification")
         

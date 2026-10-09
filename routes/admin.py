@@ -48,12 +48,13 @@ def send_activation_notification_to_user(user):
         
         # Prepare notification message
         message = "Your account has been successfully activated 🎉"
+        push_title = "Korean Pro" if user.promo_code == 'SL001' else "KOWIDA"
         
         # Prepare push notification payload
         notification_payload = {
             "to": user.expo_push_token,
             "sound": "default",
-            "title": "KOWIDA",
+            "title": push_title,
             "body": message,
             "data": {
                 "url": "/(tabs)"
