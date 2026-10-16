@@ -606,7 +606,7 @@ def get_boost_knowledge_notifications():
     """
     Get boost_knowledge notifications with pagination
     Returns boost_knowledge notifications ordered by created_at ASC
-    Supports filtering by type parameter: සමාන, විරුද්ධ, or ව්‍යාකරණ
+    Supports filtering by type parameter: සමාන, විරුද්ධ, ව්‍යාකරණ, or වෙනත්
     """
     try:
         # Get pagination parameters
@@ -644,14 +644,23 @@ def get_boost_knowledge_notifications():
                     Notification.header.contains('විරුද්ධ')
                 )
             elif type_filter == 'ව්‍යාකරණ':
-                # Filter: header does NOT contain "සමාන" AND does NOT contain "විරුද්ධ"
+                # Filter: header contains "සහ"
                 notifications_query = notifications_query.filter(
-                    ~Notification.header.contains('සමාන')
-                ).filter(
-                    ~Notification.header.contains('විරුද්ධ')
+                    Notification.header.contains('සහ')
                 )
-            # If type_filter has a value but doesn't match any of the above, 
-            # it will still be applied (no additional filter), which means all boost_knowledge notifications
+            elif type_filter == 'වෙනත්':
+                # Filter: header matches none of සමාන, විරුද්ධ, or සහ
+                notifications_query = notifications_query.filter(
+                    or_(
+                        Notification.header.is_(None),
+                        and_(
+                            ~Notification.header.contains('සමාන'),
+                            ~Notification.header.contains('විරුද්ධ'),
+                            ~Notification.header.contains('සහ'),
+                        ),
+                    )
+                )
+            # Unknown type values return all boost_knowledge notifications
         
         # Order by created_at ASC (oldest first)
         notifications_query = notifications_query.order_by(Notification.created_at.asc())
