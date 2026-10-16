@@ -722,10 +722,12 @@ def get_blog_notifications():
     """
     Get blog notifications with pagination.
     Returns blog notifications for both SLLC and other users, ordered by created_at DESC.
+    Supports filtering by type parameter: සංස්කෘතික or වෙනත්
     """
     try:
         page = request.args.get('page', 1, type=int)
         per_page = request.args.get('per_page', 15, type=int)
+        type_filter = request.args.get('type', '').strip()
 
         if page < 1:
             page = 1
@@ -737,7 +739,23 @@ def get_blog_notifications():
 
         notifications_query = Notification.query.filter(
             Notification.type == 'blog'
-        ).order_by(Notification.created_at.desc())
+        )
+
+        if type_filter == 'සංස්කෘතික':
+            # Filter: sub_header contains "සංස්කෘතික"
+            notifications_query = notifications_query.filter(
+                Notification.sub_header.contains('සංස්කෘතික')
+            )
+        elif type_filter == 'වෙනත්':
+            # Filter: sub_header does not contain "සංස්කෘතික"
+            notifications_query = notifications_query.filter(
+                or_(
+                    Notification.sub_header.is_(None),
+                    ~Notification.sub_header.contains('සංස්කෘතික'),
+                )
+            )
+
+        notifications_query = notifications_query.order_by(Notification.created_at.desc())
 
         total_count = notifications_query.count()
 
