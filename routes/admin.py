@@ -364,6 +364,7 @@ def get_all_users_unfiltered():
                 'is_active': user.is_active,
                 'share_paid': user.share_paid,
                 'is_logged': user.is_logged,
+                'expo_push_token': user.expo_push_token,
                 'created_at': user.created_at.isoformat() if user.created_at else None,
                 'updated_at': user.updated_at.isoformat() if user.updated_at else None,
                 'bank_details': [{
