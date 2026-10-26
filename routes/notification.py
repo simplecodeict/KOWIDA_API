@@ -142,6 +142,18 @@ def send_single_batch(session, batch_to_send, batch_name=""):
     return (success_count, failed_count, error_message)
 
 
+def resolve_push_body(notification_type, sub_header, body, notification_body):
+    """
+    Boost knowledge content is long, so its push body is notification_body when
+    provided, otherwise sub_header only. Other types keep the existing fallback.
+    """
+    if notification_type == 'boost_knowledge':
+        if notification_body and str(notification_body).strip():
+            return notification_body
+        return sub_header or ""
+    return notification_body if notification_body is not None else (body or "New notification")
+
+
 def send_notifications_concurrently(tokens, push_title, push_subtitle, push_body, notification_data):
     """
     Send notifications to all tokens using concurrent batch processing.
@@ -316,7 +328,7 @@ def create_notification():
         # Prepare push notification content
         push_title = "KOWIDA"
         push_subtitle = sub_header or ""
-        push_body = notification_body if notification_body is not None else (body or "New notification")
+        push_body = resolve_push_body(notification_type, sub_header, body, notification_body)
         
         # Prepare data payload with URL
         notification_data = {}
@@ -347,7 +359,7 @@ def create_notification():
                     header=header,
                     sub_header=sub_header,
                     body=body,
-                    notification_body=notification_body,
+                    notification_body=push_body if notification_type == 'boost_knowledge' else notification_body,
                     url=url
                 )
                 logger.info(f"Successfully sent notification to {sllc_sent_count} SL001 users")
@@ -461,7 +473,7 @@ def create_pre_register_notification():
             # Prepare push notification content
             push_title = "KOWIDA"
             push_subtitle = sub_header or ""
-            push_body = notification_body if notification_body is not None else (body or "New notification")
+            push_body = resolve_push_body(notification_type, sub_header, body, notification_body)
             
             # Prepare data payload with URL
             notification_data = {}
