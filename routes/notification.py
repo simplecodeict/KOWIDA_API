@@ -142,16 +142,17 @@ def send_single_batch(session, batch_to_send, batch_name=""):
     return (success_count, failed_count, error_message)
 
 
-def resolve_push_body(notification_type, sub_header, body, notification_body):
+def resolve_push_content(notification_type, header, sub_header, body, notification_body, default_title):
     """
-    Boost knowledge content is long, so its push body is notification_body when
-    provided, otherwise sub_header only. Other types keep the existing fallback.
+    Boost knowledge and blog store a subtitle, but the push only needs the
+    header and notification_body. Other types keep title, subtitle, and body.
     """
-    if notification_type == 'boost_knowledge':
-        if notification_body and str(notification_body).strip():
-            return notification_body
-        return sub_header or ""
-    return notification_body if notification_body is not None else (body or "New notification")
+    if notification_type in ('boost_knowledge', 'blog'):
+        title = header.strip() if isinstance(header, str) and header.strip() else default_title
+        text = notification_body.strip() if isinstance(notification_body, str) else ""
+        return title, "", text
+    push_body = notification_body if notification_body is not None else (body or "New notification")
+    return default_title, (sub_header or ""), push_body
 
 
 def send_notifications_concurrently(tokens, push_title, push_subtitle, push_body, notification_data):
@@ -174,9 +175,10 @@ def send_notifications_concurrently(tokens, push_title, push_subtitle, push_body
             "to": token,
             "sound": "default",
             "title": push_title,
-            "subtitle": push_subtitle,
             "body": push_body
         }
+        if push_subtitle:
+            payload["subtitle"] = push_subtitle
         if notification_data:
             payload["data"] = notification_data
         
@@ -326,9 +328,9 @@ def create_notification():
             }), 200
         
         # Prepare push notification content
-        push_title = "KOWIDA"
-        push_subtitle = sub_header or ""
-        push_body = resolve_push_body(notification_type, sub_header, body, notification_body)
+        push_title, push_subtitle, push_body = resolve_push_content(
+            notification_type, header, sub_header, body, notification_body, "KOWIDA"
+        )
         
         # Prepare data payload with URL
         notification_data = {}
@@ -359,8 +361,9 @@ def create_notification():
                     header=header,
                     sub_header=sub_header,
                     body=body,
-                    notification_body=push_body if notification_type == 'boost_knowledge' else notification_body,
-                    url=url
+                    notification_body=notification_body,
+                    url=url,
+                    notification_type=notification_type
                 )
                 logger.info(f"Successfully sent notification to {sllc_sent_count} SL001 users")
             except Exception as sllc_error:
@@ -471,9 +474,9 @@ def create_pre_register_notification():
             logger.info("No KOWIDA pre-register users with valid tokens found")
         else:
             # Prepare push notification content
-            push_title = "KOWIDA"
-            push_subtitle = sub_header or ""
-            push_body = resolve_push_body(notification_type, sub_header, body, notification_body)
+            push_title, push_subtitle, push_body = resolve_push_content(
+                notification_type, header, sub_header, body, notification_body, "KOWIDA"
+            )
             
             # Prepare data payload with URL
             notification_data = {}

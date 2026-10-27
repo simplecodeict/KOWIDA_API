@@ -613,7 +613,7 @@ def get_sllc_notifications():
 
 EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send"
 
-def send_notification_to_sllc_users(header, sub_header, body, notification_body, url):
+def send_notification_to_sllc_users(header, sub_header, body, notification_body, url, notification_type=None):
     """
     Send notification to SL001 users only (without saving to database).
     Uses optimized concurrent batch processing for reliability.
@@ -621,7 +621,7 @@ def send_notification_to_sllc_users(header, sub_header, body, notification_body,
     """
     try:
         # Import the optimized notification sending function from notification module
-        from routes.notification import send_notifications_concurrently
+        from routes.notification import resolve_push_content, send_notifications_concurrently
         
         # Fetch only SL001 users with valid tokens efficiently
         users = User.query.filter(
@@ -641,9 +641,9 @@ def send_notification_to_sllc_users(header, sub_header, body, notification_body,
             return 0
         
         # Prepare push notification content
-        push_title = "Korean Pro"
-        push_subtitle = sub_header or ""
-        push_body = notification_body if notification_body is not None else (body or "New notification")
+        push_title, push_subtitle, push_body = resolve_push_content(
+            notification_type, header, sub_header, body, notification_body, "Korean Pro"
+        )
         
         # Prepare data payload with URL
         notification_data = {}
@@ -714,7 +714,8 @@ def create_sllc_notification():
             sub_header=sub_header,
             body=body,
             notification_body=notification_body,
-            url=url
+            url=url,
+            notification_type=notification_type
         )
         
         return jsonify({
@@ -800,11 +801,11 @@ def create_sllc_pre_register_notification():
         if not tokens:
             logger.info("No SLLC pre-register users with valid tokens found")
         else:
-            from routes.notification import send_notifications_concurrently
+            from routes.notification import resolve_push_content, send_notifications_concurrently
 
-            push_title = "SLLC"
-            push_subtitle = sub_header or ""
-            push_body = notification_body if notification_body is not None else (body or "New notification")
+            push_title, push_subtitle, push_body = resolve_push_content(
+                notification_type, header, sub_header, body, notification_body, "SLLC"
+            )
 
             notification_data = {}
             if url:

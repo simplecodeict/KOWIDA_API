@@ -97,7 +97,7 @@ def send_notification_to_admin(full_name, paid_amount, user_promo_code=None):
         # Silently catch all exceptions - don't affect payment flow
         logger.error(f"Error sending notification to admin(s): {str(e)}", exc_info=True)
 
-def generate_token(user_id):
+def generate_token(user_id, expires_delta=None):
     """Generate JWT token with user claims"""
     try:
         logger.debug(f"Generating token for user_id: {user_id}")
@@ -121,11 +121,14 @@ def generate_token(user_id):
         }
         
         # Generate token with enhanced settings
-        access_token = create_access_token(
-            identity=user_id_str,
-            additional_claims=additional_claims,
-            fresh=False
-        )
+        token_kwargs = {
+            "identity": user_id_str,
+            "additional_claims": additional_claims,
+            "fresh": False,
+        }
+        if expires_delta is not None:
+            token_kwargs["expires_delta"] = expires_delta
+        access_token = create_access_token(**token_kwargs)
         
         # Debug: Decode the token we just created to verify its contents
         try:
@@ -1094,8 +1097,8 @@ def admin_login():
                 'error_code': 'ADMIN_ACCESS_REQUIRED'
             }), 403
             
-        # Generate access token
-        access_token = generate_token(user.id)
+        # Admin sessions stay signed in for 30 days
+        access_token = generate_token(user.id, expires_delta=timedelta(days=30))
         
         # Create response
         response_data = {
