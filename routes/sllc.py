@@ -804,7 +804,7 @@ def create_sllc_pre_register_notification():
             from routes.notification import resolve_push_content, send_notifications_concurrently
 
             push_title, push_subtitle, push_body = resolve_push_content(
-                notification_type, header, sub_header, body, notification_body, "SLLC"
+                notification_type, header, sub_header, body, notification_body, "Korean Pro"
             )
 
             notification_data = {}

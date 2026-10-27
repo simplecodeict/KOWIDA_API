@@ -144,13 +144,14 @@ def send_single_batch(session, batch_to_send, batch_name=""):
 
 def resolve_push_content(notification_type, header, sub_header, body, notification_body, default_title):
     """
-    Boost knowledge and blog store a subtitle, but the push only needs the
-    header and notification_body. Other types keep title, subtitle, and body.
+    Boost knowledge and blog keep the app name as the push title. Their push
+    body is notification_body when set, otherwise sub_header. Other types keep
+    title, subtitle, and body.
     """
     if notification_type in ('boost_knowledge', 'blog'):
-        title = header.strip() if isinstance(header, str) and header.strip() else default_title
-        text = notification_body.strip() if isinstance(notification_body, str) else ""
-        return title, "", text
+        note = notification_body.strip() if isinstance(notification_body, str) else ""
+        fallback = sub_header.strip() if isinstance(sub_header, str) else ""
+        return default_title, "", (note or fallback)
     push_body = notification_body if notification_body is not None else (body or "New notification")
     return default_title, (sub_header or ""), push_body
 
@@ -175,10 +176,9 @@ def send_notifications_concurrently(tokens, push_title, push_subtitle, push_body
             "to": token,
             "sound": "default",
             "title": push_title,
+            "subtitle": push_subtitle or "",
             "body": push_body
         }
-        if push_subtitle:
-            payload["subtitle"] = push_subtitle
         if notification_data:
             payload["data"] = notification_data
         
