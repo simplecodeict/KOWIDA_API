@@ -57,10 +57,10 @@ def configure_jwt(app):
     
     # Token expiration (from environment or defaults)
     app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(
-        seconds=int(os.getenv('JWT_ACCESS_TOKEN_EXPIRES', 3600))  # 1 hour default
+        seconds=int(os.getenv('JWT_ACCESS_TOKEN_EXPIRES', 2592000))  # 30 days default
     )
     app.config['JWT_REFRESH_TOKEN_EXPIRES'] = timedelta(
-        seconds=int(os.getenv('JWT_REFRESH_TOKEN_EXPIRES', 604800))  # 1 week default
+        seconds=int(os.getenv('JWT_REFRESH_TOKEN_EXPIRES', 2592000))  # 30 days default
     )
     
     # Security settings
